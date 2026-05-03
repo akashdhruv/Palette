@@ -8,6 +8,7 @@ from itertools import combinations
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.lines import Line2D
 from matplotlib.ticker import FuncFormatter, MultipleLocator
 import numpy as np
 import sympy as sp
@@ -19,23 +20,40 @@ COLORS = [
 ]
 
 _X = sp.Symbol('x')
+_Y = sp.Symbol('y')
 
 
 # ── Equation ─────────────────────────────────────────────────────────────────
 
 class Equation:
-    def __init__(self, name: str, raw: str, sym_expr, color: str):
-        self.name = name          # e.g. "y" or "y1"
-        self.raw = raw            # original string the user typed
-        self.sym_expr = sym_expr  # sympy expression in x
+    def __init__(self, name: str, raw: str, sym_expr, color: str,
+                 implicit: bool = False, lhs_sym=None, rhs_sym=None):
+        self.name = name
+        self.raw = raw
+        self.sym_expr = sym_expr  # explicit: f(x); implicit: lhs-rhs (=0)
         self.color = color
-        self._fn = sp.lambdify(_X, sym_expr, modules='numpy')
+        self.implicit = implicit
+        self._lhs_sym = lhs_sym
+        self._rhs_sym = rhs_sym
+        if implicit:
+            self._fn = None
+            self._fn2d = sp.lambdify((_X, _Y), sym_expr, modules='numpy')
+            self._zero_fn2d = self._fn2d
+        else:
+            self._fn = sp.lambdify(_X, sym_expr, modules='numpy')
+            self._fn2d = None
+            self._zero_fn2d = sp.lambdify((_X, _Y), _Y - sym_expr,
+                                           modules='numpy')
 
     @property
     def label(self) -> str:
-        return f'{self.name}={self.raw}'
+        if self.implicit:
+            return f'${sp.latex(self._lhs_sym)} = {sp.latex(self._rhs_sym)}$'
+        return f'$y={sp.latex(self.sym_expr)}$'
 
     def evaluate(self, x_arr: np.ndarray) -> np.ndarray:
+        if self.implicit:
+            return None
         try:
             result = self._fn(x_arr)
             if np.isscalar(result):
@@ -43,6 +61,15 @@ class Equation:
             return np.asarray(result, dtype=float)
         except Exception:
             return np.full_like(x_arr, np.nan, dtype=float)
+
+    def evaluate_2d(self, x_mesh: np.ndarray, y_mesh: np.ndarray) -> np.ndarray:
+        try:
+            result = self._fn2d(x_mesh, y_mesh)
+            if np.isscalar(result):
+                return np.full_like(x_mesh, float(result), dtype=float)
+            return np.asarray(result, dtype=float)
+        except Exception:
+            return np.full_like(x_mesh, np.nan, dtype=float)
 
 
 # ── Main app ─────────────────────────────────────────────────────────────────
@@ -74,25 +101,36 @@ class GraphCalcApp:
     # ── UI ───────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Graph canvas
-        self.fig = Figure(figsize=(9, 6), dpi=100)
-        self.ax = self.fig.add_subplot(111)
+        # Status bar (pack first so it's never clipped) — matplotlib for LaTeX
+        self.status_fig = Figure(figsize=(9, 0.45), dpi=100)
+        self.status_fig.set_facecolor('#1a1a2e')
+        self._status_default = (
+            r"$y = x^{2}$  or  $x = y^{3}$  to plot  •  "
+            r"clear  to reset  •  undo  to restore  •  scroll to zoom"
+        )
+        self.status_text = self.status_fig.text(
+            0.02, 0.5, self._status_default,
+            fontsize=13, color='#8888bb',
+            verticalalignment='center',
+        )
+        self.status_canvas = FigureCanvasTkAgg(self.status_fig, self.root)
+        self.status_canvas.get_tk_widget().pack(
+            side=tk.BOTTOM, fill=tk.X, padx=8, pady=(0, 6),
+        )
+        self.status_canvas.get_tk_widget().configure(height=35)
 
-        self.canvas = FigureCanvasTkAgg(self.fig, self.root)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True,
-                                         padx=6, pady=6)
-        self.canvas.mpl_connect('scroll_event', self._on_scroll)
-
-        # Input bar
+        # Input bar (pack second-from-bottom)
         bar = tk.Frame(self.root, bg='#1a1a2e')
-        bar.pack(fill=tk.X, padx=6, pady=(0, 4))
+        bar.pack(side=tk.BOTTOM, fill=tk.X, padx=6, pady=(0, 4))
 
-        tk.Label(bar, text='>', fg='#9999cc', bg='#1a1a2e',
-                 font=('Monospace', 13, 'bold')).pack(side=tk.LEFT,
-                                                       padx=(2, 6))
+        self.prompt_label = tk.Label(
+            bar, text='>', fg='#9999cc', bg='#1a1a2e',
+            font=('Monospace', 14, 'bold'),
+        )
+        self.prompt_label.pack(side=tk.LEFT, padx=(2, 6))
 
         self.entry = tk.Entry(
-            bar, font=('Monospace', 13),
+            bar, font=('Monospace', 14),
             bg='#16213e', fg='#e8e8ff',
             insertbackground='#aaaaff',
             relief=tk.FLAT,
@@ -104,16 +142,72 @@ class GraphCalcApp:
         self.entry.bind('<Return>', self._on_enter)
         self.entry.bind('<Up>', self._hist_up)
         self.entry.bind('<Down>', self._hist_down)
+        self.entry.bind('<KeyRelease>', self._on_key_preview)
         self.entry.focus()
 
-        self.status = tk.StringVar(
-            value="y=x**2  to plot  •  y=x  to add another  •  "
-                  "clear  to reset  •  undo  to restore  •  scroll to zoom"
+        # LaTeX preview strip (between input bar and graph)
+        self.preview_fig = Figure(figsize=(9, 0.5), dpi=100)
+        self.preview_fig.set_facecolor('#1a1a2e')
+        self.preview_text = self.preview_fig.text(
+            0.02, 0.5, '', fontsize=16, color='#e8e8ff',
+            verticalalignment='center',
         )
-        tk.Label(self.root, textvariable=self.status,
-                 fg='#555588', bg='#1a1a2e',
-                 font=('Monospace', 9), anchor='w'
-                 ).pack(fill=tk.X, padx=8, pady=(0, 4))
+        self.preview_canvas = FigureCanvasTkAgg(self.preview_fig, self.root)
+        self.preview_canvas.get_tk_widget().pack(
+            side=tk.BOTTOM, fill=tk.X, padx=6, pady=(0, 2),
+        )
+        self.preview_canvas.get_tk_widget().configure(height=45)
+
+        # Graph canvas (pack last — fills remaining space)
+        self.fig = Figure(figsize=(9, 6), dpi=100)
+        self.ax = self.fig.add_subplot(111)
+
+        self.canvas = FigureCanvasTkAgg(self.fig, self.root)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True,
+                                         padx=6, pady=6)
+        self.canvas.mpl_connect('scroll_event', self._on_scroll)
+
+        # Re-scale fonts when the window is resized
+        self.root.bind('<Configure>', self._on_resize)
+
+    def _set_status(self, text: str):
+        """Update the status bar (supports LaTeX via matplotlib)."""
+        self.status_text.set_text(text)
+        self.status_canvas.draw_idle()
+
+    def _on_resize(self, _event=None):
+        """Scale UI fonts based on window width."""
+        w = self.root.winfo_width()
+        scale = max(w / 960, 1.0)  # 960 is the default width
+        entry_size = int(14 * scale)
+        status_size = int(13 * scale)
+        self.entry.configure(font=('Monospace', entry_size))
+        self.prompt_label.configure(font=('Monospace', entry_size, 'bold'))
+        self.status_text.set_fontsize(status_size)
+        self.status_canvas.draw_idle()
+        preview_size = int(16 * scale)
+        self.preview_text.set_fontsize(preview_size)
+        self.preview_canvas.draw_idle()
+
+    def _on_key_preview(self, _event=None):
+        """Update the LaTeX preview strip as the user types."""
+        text = self.entry.get().strip()
+        locals_dict = {'x': _X, 'y': _Y, 'e': sp.E, 'pi': sp.pi}
+        m = re.match(r'^(.+?)\s*=\s*(.+)$', text)
+        if m:
+            lhs_str, rhs_str = m.group(1).strip(), m.group(2).strip()
+            try:
+                lhs = sp.sympify(lhs_str.replace('^', '**'), locals=locals_dict)
+                rhs = sp.sympify(rhs_str.replace('^', '**'), locals=locals_dict)
+                latex_str = f'${sp.latex(lhs)} = {sp.latex(rhs)}$'
+            except Exception:
+                latex_str = text
+        elif text:
+            latex_str = text
+        else:
+            latex_str = ''
+        self.preview_text.set_text(latex_str)
+        self.preview_canvas.draw_idle()
 
     # ── Drawing ──────────────────────────────────────────────────────────────
 
@@ -163,35 +257,52 @@ class GraphCalcApp:
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
 
+        # Scale tick labels with canvas size
+        w = self.canvas.get_tk_widget().winfo_width()
+        tick_size = max(8, int(8 * w / 900))
         ax.tick_params(axis='both', which='major',
-                       labelsize=8, length=4, width=0.8, color='#444444')
+                       labelsize=tick_size, length=4, width=0.8, color='#444444')
         ax.tick_params(axis='both', which='minor', length=2, width=0.5)
 
         # Plot equations
         x_arr = np.linspace(self.x_min, self.x_max, 4000)
+        legend_handles = []
         for eq in self.equations:
-            y_arr = eq.evaluate(x_arr)
-            y_plot = _sanitize(y_arr, self.y_min, self.y_max)
-            ax.plot(x_arr, y_plot,
-                    color=eq.color, linewidth=2.4,
-                    label=eq.label, zorder=5,
-                    solid_capstyle='round')
+            if eq.implicit:
+                xi = np.linspace(self.x_min, self.x_max, 800)
+                yi = np.linspace(self.y_min, self.y_max, 800)
+                Xm, Ym = np.meshgrid(xi, yi)
+                Zm = eq.evaluate_2d(Xm, Ym)
+                ax.contour(Xm, Ym, Zm, levels=[0],
+                           colors=[eq.color], linewidths=2.4, zorder=5)
+                legend_handles.append(
+                    Line2D([0], [0], color=eq.color, linewidth=2.4,
+                           label=eq.label))
+            else:
+                y_arr = eq.evaluate(x_arr)
+                y_plot = _sanitize(y_arr, self.y_min, self.y_max)
+                line, = ax.plot(x_arr, y_plot,
+                                color=eq.color, linewidth=2.4,
+                                label=eq.label, zorder=5,
+                                solid_capstyle='round')
+                legend_handles.append(line)
 
-        # Intersection points
-        for ix, iy in self._intersections(x_arr):
+        # Intersection points (all equation pairs)
+        for ix, iy in self._intersections(x_arr, self.equations):
             ax.plot(ix, iy, 'o', color='#111111', markersize=7, zorder=8)
             ax.annotate(
                 f'({_fc(ix)}, {_fc(iy)})',
                 xy=(ix, iy), xytext=(9, 9),
                 textcoords='offset points',
-                fontsize=8, color='#111111',
+                fontsize=tick_size, color='#111111',
                 bbox=dict(boxstyle='round,pad=0.3',
                           fc='white', alpha=0.9,
                           ec='#aaaaaa', lw=0.7),
             )
 
-        if self.equations:
-            ax.legend(loc='upper right', fontsize=9,
+        if legend_handles:
+            ax.legend(handles=legend_handles,
+                      loc='upper right', fontsize=max(9, tick_size),
                       framealpha=0.92, facecolor='white',
                       edgecolor='#bbbbbb', borderpad=0.6)
 
@@ -200,32 +311,42 @@ class GraphCalcApp:
 
     # ── Intersections ─────────────────────────────────────────────────────────
 
-    def _intersections(self, x_arr):
+    def _intersections(self, x_arr, eqs=None):
+        eqs = eqs or self.equations
         pts = []
-        for eq1, eq2 in combinations(self.equations, 2):
+        for eq1, eq2 in combinations(eqs, 2):
             if not self._sym_intersect(eq1, eq2, pts):
-                self._num_intersect(eq1, eq2, x_arr, pts)
+                if not eq1.implicit and not eq2.implicit:
+                    self._num_intersect(eq1, eq2, x_arr, pts)
+                elif eq1.implicit and eq2.implicit:
+                    self._num_intersect_implicit(eq1, eq2, pts)
+                else:
+                    exp, imp = (eq1, eq2) if not eq1.implicit else (eq2, eq1)
+                    self._num_intersect_mixed(exp, imp, x_arr, pts)
         return pts
 
     def _sym_intersect(self, eq1, eq2, pts):
-        """Analytical solution via sympy. Returns True if solutions found."""
+        """Analytical solution via sympy (handles all equation types)."""
         try:
-            sols = sp.solve(eq1.sym_expr - eq2.sym_expr, _X)
+            e1 = _Y - eq1.sym_expr if not eq1.implicit else eq1.sym_expr
+            e2 = _Y - eq2.sym_expr if not eq2.implicit else eq2.sym_expr
+            sols = sp.solve([e1, e2], [_X, _Y])
+            if isinstance(sols, dict):
+                sols = [(sols.get(_X), sols.get(_Y))]
             found = False
             for sol in sols:
                 try:
-                    cv = complex(sol)
-                    if abs(cv.imag) > 1e-8:
+                    sx_c, sy_c = complex(sol[0]), complex(sol[1])
+                    if abs(sx_c.imag) > 1e-8 or abs(sy_c.imag) > 1e-8:
                         continue
-                    sx = float(cv.real)
+                    sx, sy = float(sx_c.real), float(sy_c.real)
                 except Exception:
                     continue
                 if not (self.x_min <= sx <= self.x_max):
                     continue
-                sy = float(eq1._fn(sx))
                 if not (self.y_min <= sy <= self.y_max):
                     continue
-                if not _dup(sx, pts):
+                if not _dup(sx, sy, pts):
                     pts.append((sx, sy))
                     found = True
             return found
@@ -233,7 +354,7 @@ class GraphCalcApp:
             return False
 
     def _num_intersect(self, eq1, eq2, x_arr, pts):
-        """Numerical intersection by sign-change detection + bisection."""
+        """Numerical intersection for two explicit equations."""
         try:
             y1 = eq1.evaluate(x_arr)
             y2 = eq2.evaluate(x_arr)
@@ -249,70 +370,159 @@ class GraphCalcApp:
                 sx = _bisect(lambda xv: float(eq1._fn(xv)) - float(eq2._fn(xv)),
                              a, b, da, db)
                 sy = float(eq1._fn(sx))
-                if self.y_min <= sy <= self.y_max and not _dup(sx, pts):
+                if self.y_min <= sy <= self.y_max and not _dup(sx, sy, pts):
+                    pts.append((sx, sy))
+        except Exception:
+            pass
+
+    def _num_intersect_mixed(self, explicit_eq, implicit_eq, x_arr, pts):
+        """Numerical intersection: substitute y=f(x) into implicit equation."""
+        try:
+            y_arr = explicit_eq.evaluate(x_arr)
+            vals = implicit_eq.evaluate_2d(x_arr, y_arr)
+            valid = ~(np.isnan(vals) | np.isinf(vals))
+            sign = np.sign(vals)
+            changes = np.where(
+                (np.diff(sign) != 0) & valid[:-1] & valid[1:]
+            )[0]
+            for idx in changes:
+                a, b = float(x_arr[idx]), float(x_arr[idx + 1])
+                fa, fb = float(vals[idx]), float(vals[idx + 1])
+
+                def _f(xv):
+                    yv = float(explicit_eq._fn(xv))
+                    return float(implicit_eq._fn2d(xv, yv))
+
+                sx = _bisect(_f, a, b, fa, fb)
+                sy = float(explicit_eq._fn(sx))
+                if self.y_min <= sy <= self.y_max and not _dup(sx, sy, pts):
+                    pts.append((sx, sy))
+        except Exception:
+            pass
+
+    def _num_intersect_implicit(self, eq1, eq2, pts):
+        """Numerical intersection for two implicit curves on a 2-D grid."""
+        try:
+            nx = ny = 400
+            xi = np.linspace(self.x_min, self.x_max, nx)
+            yi = np.linspace(self.y_min, self.y_max, ny)
+            Xm, Ym = np.meshgrid(xi, yi)
+            Z1 = eq1.evaluate_2d(Xm, Ym)
+            Z2 = eq2.evaluate_2d(Xm, Ym)
+
+            # Vectorised: find cells where both functions have a sign change
+            z1_min = np.minimum(np.minimum(Z1[:-1, :-1], Z1[:-1, 1:]),
+                                np.minimum(Z1[1:, :-1], Z1[1:, 1:]))
+            z1_max = np.maximum(np.maximum(Z1[:-1, :-1], Z1[:-1, 1:]),
+                                np.maximum(Z1[1:, :-1], Z1[1:, 1:]))
+            z2_min = np.minimum(np.minimum(Z2[:-1, :-1], Z2[:-1, 1:]),
+                                np.minimum(Z2[1:, :-1], Z2[1:, 1:]))
+            z2_max = np.maximum(np.maximum(Z2[:-1, :-1], Z2[:-1, 1:]),
+                                np.maximum(Z2[1:, :-1], Z2[1:, 1:]))
+
+            both = ((z1_min <= 0) & (z1_max >= 0) &
+                    (z2_min <= 0) & (z2_max >= 0))
+            cells = np.argwhere(both)
+
+            for i, j in cells:
+                sx = (xi[j] + xi[j + 1]) / 2
+                sy = (yi[i] + yi[i + 1]) / 2
+                sx, sy = _refine_2d(eq1._zero_fn2d, eq2._zero_fn2d, sx, sy)
+                if (self.x_min <= sx <= self.x_max and
+                        self.y_min <= sy <= self.y_max and
+                        not _dup(sx, sy, pts)):
                     pts.append((sx, sy))
         except Exception:
             pass
 
     # ── Auto-fit ──────────────────────────────────────────────────────────────
 
-    def _find_all_intersections(self, x_arr: np.ndarray):
+    def _find_all_intersections(self, x_arr: np.ndarray, eqs=None):
         """Find intersections without view-bound filtering (used for auto-fit)."""
         pts = []
-        for eq1, eq2 in combinations(self.equations, 2):
+        for eq1, eq2 in combinations(eqs or self.equations, 2):
             found_sym = False
             try:
-                sols = sp.solve(eq1.sym_expr - eq2.sym_expr, _X)
+                e1 = _Y - eq1.sym_expr if not eq1.implicit else eq1.sym_expr
+                e2 = _Y - eq2.sym_expr if not eq2.implicit else eq2.sym_expr
+                sols = sp.solve([e1, e2], [_X, _Y])
+                if isinstance(sols, dict):
+                    sols = [(sols.get(_X), sols.get(_Y))]
                 for sol in sols:
                     try:
-                        cv = complex(sol)
-                        if abs(cv.imag) > 1e-8:
+                        sx_c, sy_c = complex(sol[0]), complex(sol[1])
+                        if abs(sx_c.imag) > 1e-8 or abs(sy_c.imag) > 1e-8:
                             continue
-                        sx = float(cv.real)
+                        sx, sy = float(sx_c.real), float(sy_c.real)
                     except Exception:
                         continue
-                    if not np.isfinite(sx):
-                        continue
-                    sy = float(eq1._fn(sx))
-                    if np.isfinite(sy) and not _dup(sx, pts):
+                    if np.isfinite(sx) and np.isfinite(sy) and not _dup(sx, sy, pts):
                         pts.append((sx, sy))
                         found_sym = True
             except Exception:
                 pass
 
             if not found_sym:
-                try:
-                    y1 = eq1.evaluate(x_arr)
-                    y2 = eq2.evaluate(x_arr)
-                    diff = y1 - y2
-                    valid = ~(np.isnan(diff) | np.isinf(diff))
-                    sign = np.sign(diff)
-                    changes = np.where(
-                        (np.diff(sign) != 0) & valid[:-1] & valid[1:]
-                    )[0]
-                    for idx in changes:
-                        a, b = float(x_arr[idx]), float(x_arr[idx + 1])
-                        da, db = float(diff[idx]), float(diff[idx + 1])
-                        sx = _bisect(
-                            lambda xv: float(eq1._fn(xv)) - float(eq2._fn(xv)),
-                            a, b, da, db,
-                        )
-                        sy = float(eq1._fn(sx))
-                        if np.isfinite(sy) and not _dup(sx, pts):
-                            pts.append((sx, sy))
-                except Exception:
-                    pass
+                if not eq1.implicit and not eq2.implicit:
+                    try:
+                        y1 = eq1.evaluate(x_arr)
+                        y2 = eq2.evaluate(x_arr)
+                        diff = y1 - y2
+                        valid = ~(np.isnan(diff) | np.isinf(diff))
+                        sign = np.sign(diff)
+                        changes = np.where(
+                            (np.diff(sign) != 0) & valid[:-1] & valid[1:]
+                        )[0]
+                        for idx in changes:
+                            a, b = float(x_arr[idx]), float(x_arr[idx + 1])
+                            da, db = float(diff[idx]), float(diff[idx + 1])
+                            sx = _bisect(
+                                lambda xv: float(eq1._fn(xv)) - float(eq2._fn(xv)),
+                                a, b, da, db,
+                            )
+                            sy = float(eq1._fn(sx))
+                            if np.isfinite(sy) and not _dup(sx, sy, pts):
+                                pts.append((sx, sy))
+                    except Exception:
+                        pass
+                elif not eq1.implicit or not eq2.implicit:
+                    # mixed: explicit + implicit
+                    exp, imp = (eq1, eq2) if not eq1.implicit else (eq2, eq1)
+                    try:
+                        y_arr = exp.evaluate(x_arr)
+                        vals = imp.evaluate_2d(x_arr, y_arr)
+                        valid = ~(np.isnan(vals) | np.isinf(vals))
+                        sign = np.sign(vals)
+                        changes = np.where(
+                            (np.diff(sign) != 0) & valid[:-1] & valid[1:]
+                        )[0]
+                        for idx in changes:
+                            a, b = float(x_arr[idx]), float(x_arr[idx + 1])
+                            fa, fb = float(vals[idx]), float(vals[idx + 1])
+
+                            def _f(xv):
+                                yv = float(exp._fn(xv))
+                                return float(imp._fn2d(xv, yv))
+
+                            sx = _bisect(_f, a, b, fa, fb)
+                            sy = float(exp._fn(sx))
+                            if np.isfinite(sy) and not _dup(sx, sy, pts):
+                                pts.append((sx, sy))
+                    except Exception:
+                        pass
+                # implicit-implicit: skip numerical for auto-fit (no view window)
         return pts
 
     def _auto_fit(self):
         """Set view window to best display the equations and their intersections."""
-        if not self.equations:
+        explicit = [e for e in self.equations if not e.implicit]
+        if not explicit:
             self.x_min, self.x_max = -10.0, 10.0
             self.y_min, self.y_max = -10.0, 10.0
             return
 
         wide_x = np.linspace(-100.0, 100.0, 40001)
-        intersect_pts = self._find_all_intersections(wide_x)
+        intersect_pts = self._find_all_intersections(wide_x, explicit)
 
         if intersect_pts:
             ix_vals = [p[0] for p in intersect_pts]
@@ -327,7 +537,7 @@ class GraphCalcApp:
 
         eval_x = np.linspace(cand_x_min, cand_x_max, 4000)
         all_y = []
-        for eq in self.equations:
+        for eq in explicit:
             y = eq.evaluate(eval_x)
             finite = y[np.isfinite(y)]
             if len(finite):
@@ -368,14 +578,14 @@ class GraphCalcApp:
 
     def _undo(self):
         if not self._snapshots:
-            self.status.set('Nothing to undo.')
+            self._set_status('Nothing to undo.')
             return
         eqs, xn, xx, yn, yx = self._snapshots.pop()
         self.equations = eqs
         self.x_min, self.x_max = xn, xx
         self.y_min, self.y_max = yn, yx
         n = len(self.equations)
-        self.status.set(
+        self._set_status(
             f"Undo — {'no equations' if n == 0 else f'{n} equation(s)'} remaining."
         )
         self._redraw()
@@ -391,7 +601,7 @@ class GraphCalcApp:
         if lower == 'clear':
             self._save_snapshot()
             self.equations.clear()
-            self.status.set('Cleared.')
+            self._set_status('Cleared.')
             self._redraw()
             return
 
@@ -403,7 +613,7 @@ class GraphCalcApp:
             self.equations = [e for e in self.equations if e.name != name]
             msg = f'Removed {name}.' if len(self.equations) < before \
                 else f'{name} not found.'
-            self.status.set(msg)
+            self._set_status(msg)
             self._auto_fit()
             self._redraw()
             return
@@ -423,21 +633,62 @@ class GraphCalcApp:
                     self.y_min = val
                 else:
                     self.y_max = val
-                self.status.set(f'{attr} = {val}')
+                self._set_status(f'{attr} = {val}')
                 self._redraw()
             except Exception:
-                self.status.set(f'Bad value for {attr}.')
+                self._set_status(f'Bad value for {attr}.')
             return
 
-        # y[n] = expr
-        m = re.match(r'^(y\d*)\s*=\s*(.+)$', text, re.IGNORECASE)
+        # y = expr  (explicit, y isolated on the left)
+        m = re.match(r'^y\s*=\s*(.+)$', text, re.IGNORECASE)
         if m:
-            self._add_eq(m.group(1).lower(), m.group(2).strip())
+            rhs = m.group(1).strip()
+            # Only treat as explicit if rhs has no 'y'
+            if not re.search(r'\by\b', rhs, re.IGNORECASE):
+                name = self._next_name()
+                self._add_eq(name, rhs)
+                return
+
+        # General equation: <lhs> = <rhs>  (implicit)
+        m = re.match(r'^(.+?)\s*=\s*(.+)$', text)
+        if m:
+            self._add_implicit_eq(m.group(1).strip(), m.group(2).strip())
             return
 
-        self.status.set(
-            "Unknown input.  Try:  y=x**2  |  y=sin(x)  |  clear  |  xmin=-20"
+        self._set_status(
+            r"Unknown input.  Try:  $y=x^{2}$  |  $x=y^{3}$  |  clear  |  xmin=-20"
         )
+
+    def _next_name(self) -> str:
+        """Return the next available internal name (y1, y2, ...)."""
+        used = {e.name for e in self.equations}
+        i = 1
+        while f'y{i}' in used:
+            i += 1
+        return f'y{i}'
+
+    def _add_implicit_eq(self, lhs_str: str, rhs_str: str):
+        try:
+            locals_dict = {'x': _X, 'y': _Y, 'e': sp.E, 'pi': sp.pi}
+            lhs_expr = sp.sympify(lhs_str.replace('^', '**'), locals=locals_dict)
+            rhs_expr = sp.sympify(rhs_str.replace('^', '**'), locals=locals_dict)
+            implicit_expr = lhs_expr - rhs_expr
+            self._save_snapshot()
+            name = self._next_name()
+            color = COLORS[len(self.equations) % len(COLORS)]
+            self.equations.append(Equation(
+                name, f'{lhs_str}={rhs_str}', implicit_expr, color,
+                implicit=True, lhs_sym=lhs_expr, rhs_sym=rhs_expr,
+            ))
+            n = len(self.equations)
+            self._set_status(
+                f"Plotted  ${sp.latex(lhs_expr)} = {sp.latex(rhs_expr)}$  "
+                f"({'1 equation' if n == 1 else f'{n} equations'})"
+            )
+            self._auto_fit()
+            self._redraw()
+        except Exception as exc:
+            self._set_status(f'Error: {exc}')
 
     def _add_eq(self, name: str, raw: str):
         try:
@@ -452,14 +703,15 @@ class GraphCalcApp:
             color = COLORS[len(self.equations) % len(COLORS)]
             self.equations.append(Equation(name, raw, sym_expr, color))
             n = len(self.equations)
-            self.status.set(
-                f"Plotted  {name}={raw}  "
+            latex = sp.latex(sym_expr)
+            self._set_status(
+                f"Plotted  $y = {latex}$  "
                 f"({'1 equation' if n == 1 else f'{n} equations'})"
             )
             self._auto_fit()
             self._redraw()
         except Exception as exc:
-            self.status.set(f'Error: {exc}')
+            self._set_status(f'Error: {exc}')
 
     # ── Navigation ────────────────────────────────────────────────────────────
 
@@ -536,8 +788,36 @@ def _bisect(f, a: float, b: float, fa: float, fb: float,
     return (a + b) / 2
 
 
-def _dup(sx: float, pts, tol: float = 1e-4) -> bool:
-    return any(abs(sx - p[0]) < tol for p in pts)
+def _refine_2d(fn1, fn2, x0: float, y0: float,
+               iters: int = 20, tol: float = 1e-10) -> tuple:
+    """Newton-refine a 2-D intersection of fn1(x,y)==0 and fn2(x,y)==0."""
+    h = 1e-7
+    x, y = x0, y0
+    for _ in range(iters):
+        try:
+            f1 = float(fn1(x, y))
+            f2 = float(fn2(x, y))
+        except Exception:
+            break
+        if abs(f1) < tol and abs(f2) < tol:
+            break
+        try:
+            f1x = (float(fn1(x + h, y)) - f1) / h
+            f1y = (float(fn1(x, y + h)) - f1) / h
+            f2x = (float(fn2(x + h, y)) - f2) / h
+            f2y = (float(fn2(x, y + h)) - f2) / h
+        except Exception:
+            break
+        det = f1x * f2y - f1y * f2x
+        if abs(det) < 1e-15:
+            break
+        x -= (f1 * f2y - f2 * f1y) / det
+        y -= (f2 * f1x - f1 * f2x) / det
+    return x, y
+
+
+def _dup(sx: float, sy: float, pts, tol: float = 1e-4) -> bool:
+    return any(abs(sx - p[0]) < tol and abs(sy - p[1]) < tol for p in pts)
 
 
 def _fc(v: float) -> str:
