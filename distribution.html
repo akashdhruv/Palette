@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Normal Distribution Calculator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    color: #e8e8ff;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #graph-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    min-height: 0;
+  }
+  #graph-canvas {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 6px;
+  }
+  #controls {
+    padding: 10px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    border-top: 1px solid #333366;
+  }
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .control-group label {
+    color: #9999cc;
+    font-size: 13px;
+    font-weight: bold;
+    min-width: fit-content;
+  }
+  .control-group input {
+    background: #16213e;
+    color: #e8e8ff;
+    border: 1px solid #333366;
+    border-radius: 5px;
+    padding: 6px 10px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    width: 90px;
+    caret-color: #aaaaff;
+  }
+  .control-group input:focus { border-color: #5555bb; }
+  .control-group input::placeholder { color: #555588; }
+  #mode-toggle {
+    display: flex;
+    gap: 0;
+  }
+  #mode-toggle button {
+    background: #16213e;
+    color: #9999cc;
+    border: 1px solid #333366;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #mode-toggle button:first-child { border-radius: 5px 0 0 5px; }
+  #mode-toggle button:last-child { border-radius: 0 5px 5px 0; }
+  #mode-toggle button.active {
+    background: #5555bb;
+    color: #ffffff;
+    border-color: #5555bb;
+  }
+  #result-bar {
+    padding: 8px 14px;
+    font-size: 15px;
+    color: #ccccff;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+  }
+  #result-bar .value { color: #66eebb; font-weight: bold; }
+  #status-bar {
+    min-height: 28px;
+    padding: 2px 14px 8px;
+    color: #8888bb;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div id="graph-container">
+  <canvas id="graph-canvas"></canvas>
+</div>
+<div id="result-bar"></div>
+<div id="controls">
+  <div class="control-group">
+    <label>Mean (&mu;):</label>
+    <input id="mean-input" type="number" value="0" step="0.1">
+  </div>
+  <div class="control-group">
+    <label>Std Dev (&sigma;):</label>
+    <input id="std-input" type="number" value="1" step="0.1" min="0.01">
+  </div>
+  <div id="mode-toggle">
+    <button id="btn-z-to-p" class="active">Z &rarr; P</button>
+    <button id="btn-p-to-z">P &rarr; Z</button>
+  </div>
+  <div class="control-group">
+    <label id="input-label">Z:</label>
+    <input id="value-input" type="number" value="0" step="0.01">
+  </div>
+</div>
+<div id="status-bar">P(Z &lt; z) — specify z to find probability, or switch mode to find z from probability</div>
+
+<script>
+(function() {
+  const canvas = document.getElementById('graph-canvas');
+  const ctx = canvas.getContext('2d');
+  const meanInput = document.getElementById('mean-input');
+  const stdInput = document.getElementById('std-input');
+  const valueInput = document.getElementById('value-input');
+  const inputLabel = document.getElementById('input-label');
+  const resultBar = document.getElementById('result-bar');
+  const statusBar = document.getElementById('status-bar');
+  const btnZtoP = document.getElementById('btn-z-to-p');
+  const btnPtoZ = document.getElementById('btn-p-to-z');
+
+  let mode = 'z-to-p'; // or 'p-to-z'
+
+  // --- Math functions ---
+
+  function normalPDF(x, mu, sigma) {
+    const z = (x - mu) / sigma;
+    return Math.exp(-0.5 * z * z) / (sigma * Math.sqrt(2 * Math.PI));
+  }
+
+  // Cumulative distribution function using error function approximation
+  function normalCDF(x, mu, sigma) {
+    const z = (x - mu) / sigma;
+    return 0.5 * (1 + erf(z / Math.sqrt(2)));
+  }
+
+  // Error function (Abramowitz & Stegun approximation)
+  function erf(x) {
+    const sign = x >= 0 ? 1 : -1;
+    x = Math.abs(x);
+    const t = 1.0 / (1.0 + 0.3275911 * x);
+    const y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return sign * y;
+  }
+
+  // Inverse CDF (probit function) using rational approximation
+  function normalInvCDF(p, mu, sigma) {
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    // Rational approximation for standard normal inverse CDF
+    const z = invStdNormal(p);
+    return mu + sigma * z;
+  }
+
+  function invStdNormal(p) {
+    // Peter Acklam's algorithm
+    const a = [
+      -3.969683028665376e+01, 2.209460984245205e+02,
+      -2.759285104469687e+02, 1.383577518672690e+02,
+      -3.066479806614716e+01, 2.506628277459239e+00
+    ];
+    const b = [
+      -5.447609879822406e+01, 1.615858368580409e+02,
+      -1.556989798598866e+02, 6.680131188771972e+01,
+      -1.328068155288572e+01
+    ];
+    const c = [
+      -7.784894002430293e-03, -3.223964580411365e-01,
+      -2.400758277161838e+00, -2.549732539343734e+00,
+       4.374664141464968e+00, 2.938163982698783e+00
+    ];
+    const d = [
+      7.784695709041462e-03, 3.224671290700398e-01,
+      2.445134137142996e+00, 3.754408661907416e+00
+    ];
+
+    const pLow = 0.02425;
+    const pHigh = 1 - pLow;
+
+    let q, r;
+    if (p < pLow) {
+      q = Math.sqrt(-2 * Math.log(p));
+      return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+             ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+    } else if (p <= pHigh) {
+      q = p - 0.5;
+      r = q * q;
+      return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+             (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+    } else {
+      q = Math.sqrt(-2 * Math.log(1 - p));
+      return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+              ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+    }
+  }
+
+  // --- Drawing ---
+
+  function draw() {
+    const container = document.getElementById('graph-container');
+    const dpr = window.devicePixelRatio || 1;
+    const cw = container.clientWidth - 12;
+    const ch = container.clientHeight - 12;
+
+    canvas.width = cw * dpr;
+    canvas.height = ch * dpr;
+    canvas.style.width = cw + 'px';
+    canvas.style.height = ch + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const mu = parseFloat(meanInput.value) || 0;
+    const sigma = parseFloat(stdInput.value) || 1;
+    const val = parseFloat(valueInput.value) || 0;
+
+    // Compute result
+    let zVal, pVal, xMark;
+    if (mode === 'z-to-p') {
+      zVal = val;
+      xMark = mu + zVal * sigma;
+      pVal = normalCDF(xMark, mu, sigma);
+      resultBar.innerHTML = `P(Z &lt; ${zVal.toFixed(4)}) = <span class="value">${pVal.toFixed(6)}</span> &nbsp;|&nbsp; x = ${xMark.toFixed(4)}`;
+    } else {
+      pVal = Math.max(0.0001, Math.min(0.9999, val));
+      xMark = normalInvCDF(pVal, mu, sigma);
+      zVal = (xMark - mu) / sigma;
+      resultBar.innerHTML = `z = <span class="value">${zVal.toFixed(4)}</span> for P(Z &lt; z) = ${pVal.toFixed(6)} &nbsp;|&nbsp; x = ${xMark.toFixed(4)}`;
+    }
+
+    // Graph bounds: show mu +/- 4*sigma
+    const xMin = mu - 4 * sigma;
+    const xMax = mu + 4 * sigma;
+    const yMax = normalPDF(mu, mu, sigma) * 1.15;
+    const yMin = -yMax * 0.08;
+
+    const pad = { left: 50, right: 20, top: 20, bottom: 35 };
+    const plotW = cw - pad.left - pad.right;
+    const plotH = ch - pad.top - pad.bottom;
+
+    function toCanvasX(x) { return pad.left + (x - xMin) / (xMax - xMin) * plotW; }
+    function toCanvasY(y) { return pad.top + (1 - (y - yMin) / (yMax - yMin)) * plotH; }
+
+    // Background
+    ctx.fillStyle = '#f4fff4';
+    ctx.fillRect(pad.left, pad.top, plotW, plotH);
+
+    // Grid
+    ctx.strokeStyle = '#a8d8a8';
+    ctx.lineWidth = 0.5;
+    const xStep = sigma;
+    for (let x = mu - 4 * sigma; x <= mu + 4 * sigma; x += xStep) {
+      const cx = toCanvasX(x);
+      ctx.beginPath(); ctx.moveTo(cx, pad.top); ctx.lineTo(cx, pad.top + plotH); ctx.stroke();
+    }
+    const yStep = yMax / 5;
+    for (let y = 0; y <= yMax; y += yStep) {
+      const cy = toCanvasY(y);
+      ctx.beginPath(); ctx.moveTo(pad.left, cy); ctx.lineTo(pad.left + plotW, cy); ctx.stroke();
+    }
+
+    // Axes
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 1.5;
+    const baseY = toCanvasY(0);
+    ctx.beginPath(); ctx.moveTo(pad.left, baseY); ctx.lineTo(pad.left + plotW, baseY); ctx.stroke();
+
+    // Shaded area under curve (P region)
+    const shadeTo = Math.min(Math.max(xMark, xMin), xMax);
+    ctx.fillStyle = 'rgba(52, 152, 219, 0.3)';
+    ctx.beginPath();
+    ctx.moveTo(toCanvasX(xMin), baseY);
+    const steps = 500;
+    for (let i = 0; i <= steps; i++) {
+      const x = xMin + (shadeTo - xMin) * i / steps;
+      ctx.lineTo(toCanvasX(x), toCanvasY(normalPDF(x, mu, sigma)));
+    }
+    ctx.lineTo(toCanvasX(shadeTo), baseY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Draw curve
+    ctx.strokeStyle = '#e74c3c';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i = 0; i <= 1000; i++) {
+      const x = xMin + (xMax - xMin) * i / 1000;
+      const y = normalPDF(x, mu, sigma);
+      const cx = toCanvasX(x);
+      const cy = toCanvasY(y);
+      if (i === 0) ctx.moveTo(cx, cy);
+      else ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+
+    // Mark line at xMark
+    if (xMark >= xMin && xMark <= xMax) {
+      ctx.strokeStyle = '#3498db';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      const mx = toCanvasX(xMark);
+      ctx.beginPath(); ctx.moveTo(mx, baseY); ctx.lineTo(mx, toCanvasY(normalPDF(xMark, mu, sigma))); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label
+      ctx.fillStyle = '#16213e';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`z=${zVal.toFixed(2)}`, mx, baseY + 14);
+    }
+
+    // X-axis labels (z-scores)
+    ctx.fillStyle = '#333';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    for (let i = -4; i <= 4; i++) {
+      const x = mu + i * sigma;
+      const cx = toCanvasX(x);
+      if (i !== 0 || mu === 0) {
+        ctx.fillText(i === 0 ? '0' : `${i}σ`, cx, baseY + 28);
+      }
+    }
+
+    // Y-axis labels
+    ctx.textAlign = 'right';
+    for (let y = 0; y <= yMax * 0.95; y += yStep) {
+      const cy = toCanvasY(y);
+      ctx.fillText(y.toFixed(3), pad.left - 5, cy + 4);
+    }
+
+    // Title
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`N(μ=${mu}, σ=${sigma})  P(Z<${zVal.toFixed(2)}) = ${pVal.toFixed(4)}`, pad.left + 5, pad.top + 15);
+
+    // Outer border
+    ctx.strokeStyle = '#555555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(pad.left, pad.top, plotW, plotH);
+  }
+
+  // --- Mode switching ---
+
+  function setMode(newMode) {
+    mode = newMode;
+    if (mode === 'z-to-p') {
+      btnZtoP.classList.add('active');
+      btnPtoZ.classList.remove('active');
+      inputLabel.textContent = 'Z:';
+      valueInput.value = '0';
+      valueInput.step = '0.01';
+      statusBar.innerHTML = 'P(Z &lt; z) — enter z-score to find cumulative probability';
+    } else {
+      btnPtoZ.classList.add('active');
+      btnZtoP.classList.remove('active');
+      inputLabel.textContent = 'P:';
+      valueInput.value = '0.5';
+      valueInput.step = '0.01';
+      statusBar.innerHTML = 'Inverse — enter probability (0 to 1) to find z-score';
+    }
+    draw();
+  }
+
+  btnZtoP.addEventListener('click', () => setMode('z-to-p'));
+  btnPtoZ.addEventListener('click', () => setMode('p-to-z'));
+
+  // --- Event listeners ---
+
+  meanInput.addEventListener('input', draw);
+  stdInput.addEventListener('input', draw);
+  valueInput.addEventListener('input', draw);
+  window.addEventListener('resize', draw);
+
+  // Initial draw
+  draw();
+})();
+</script>
+
+</body>
+</html>

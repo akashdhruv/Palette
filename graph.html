@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Graph Calculator</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
+<script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    color: #e8e8ff;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #loading-screen {
+    position: fixed; inset: 0;
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.5s;
+  }
+  #loading-screen.hidden { opacity: 0; pointer-events: none; }
+  .loader {
+    width: 48px; height: 48px;
+    border: 4px solid #333366;
+    border-top-color: #9999cc;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading-screen p {
+    margin-top: 18px;
+    color: #8888bb;
+    font-size: 15px;
+  }
+  #loading-screen .sub {
+    margin-top: 6px;
+    color: #555588;
+    font-size: 12px;
+  }
+  #loading-log {
+    margin-top: 18px;
+    width: 280px;
+    max-height: 160px;
+    overflow-y: auto;
+    font-size: 12px;
+    color: #7777aa;
+    text-align: left;
+  }
+  #loading-log .log-entry {
+    padding: 2px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    animation: fadeIn 0.3s forwards;
+  }
+  #loading-log .log-entry .check { color: #27ae60; }
+  #loading-log .log-entry .spin {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+    color: #9999cc;
+  }
+  @keyframes fadeIn { to { opacity: 1; } }
+  #loading-progress {
+    margin-top: 14px;
+    width: 220px;
+    height: 4px;
+    background: #2a2a4e;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  #loading-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #5555bb, #9999cc);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+  #graph-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    min-height: 0;
+  }
+  #graph-container img, #graph-container canvas {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 6px;
+  }
+  #preview-bar {
+    min-height: 36px;
+    padding: 4px 14px;
+    color: #e8e8ff;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+  }
+  #preview-bar .katex { color: #ccccff; }
+  #preview-bar .preview-error { color: #666688; font-size: 14px; }
+  #input-bar {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px 6px;
+    gap: 6px;
+  }
+  #input-bar label {
+    color: #9999cc;
+    font-size: 18px;
+    font-weight: bold;
+  }
+  #eq-input {
+    flex: 1;
+    background: #16213e;
+    color: #e8e8ff;
+    border: 1px solid #333366;
+    border-radius: 5px;
+    padding: 8px 12px;
+    font-size: 16px;
+    font-family: inherit;
+    outline: none;
+    caret-color: #aaaaff;
+  }
+  #eq-input:focus { border-color: #5555bb; }
+  #eq-input::placeholder { color: #555588; }
+  #status-bar {
+    min-height: 28px;
+    padding: 2px 14px 8px;
+    color: #8888bb;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+  }
+  #status-bar img {
+    max-height: 22px;
+  }
+  /* Equation pills */
+  #eq-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0 10px 2px;
+  }
+  .eq-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    color: #fff;
+    cursor: pointer;
+    opacity: 0.85;
+  }
+  .eq-pill:hover { opacity: 1; }
+  .eq-pill .x-btn {
+    font-size: 14px;
+    cursor: pointer;
+    margin-left: 2px;
+    opacity: 0.6;
+  }
+  .eq-pill .x-btn:hover { opacity: 1; }
+</style>
+<py-config>
+  packages = ["numpy", "sympy", "matplotlib"]
+</py-config>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="loader"></div>
+  <p>Loading Graph Calculator...</p>
+  <p class="sub">Downloading Python + NumPy + SymPy + Matplotlib (first load only)</p>
+  <div id="loading-progress"><div id="loading-progress-bar"></div></div>
+  <div id="loading-log"></div>
+</div>
+
+<script>
+(function() {
+  const log = document.getElementById('loading-log');
+  const bar = document.getElementById('loading-progress-bar');
+  const known = [
+    'pyodide.asm', 'pyodide_http', 'packages.json',
+    'numpy', 'sympy', 'matplotlib', 'micropip',
+    'mpmath', 'cycler', 'kiwisolver', 'pillow',
+    'fonttools', 'pyparsing', 'packaging', 'dateutil',
+    'six', 'contourpy',
+  ];
+  let completed = 0;
+  let total = known.length;
+  let logged = new Set();
+
+  function addEntry(name, done) {
+    let id = 'log-' + name.replace(/[^a-z0-9]/gi, '_');
+    let el = document.getElementById(id);
+    if (done && el) {
+      el.innerHTML = '<span class="check">&#10003;</span> ' + name;
+      return;
+    }
+    if (el) return;
+    el = document.createElement('div');
+    el.className = 'log-entry';
+    el.id = id;
+    el.innerHTML = done
+      ? '<span class="check">&#10003;</span> ' + name
+      : '<span class="spin">&#9696;</span> ' + name;
+    log.prepend(el);
+    log.scrollTop = 0;
+  }
+
+  function updateBar() {
+    let pct = Math.min(100, Math.round((completed / total) * 100));
+    bar.style.width = pct + '%';
+  }
+
+  function nameFromUrl(url) {
+    let s = String(url);
+    for (let k of known) {
+      if (s.toLowerCase().includes(k.toLowerCase())) return k;
+    }
+    // extract filename for .whl or .tar
+    let m = s.match(/\/([^\/]+?)\.(whl|tar|js|wasm)/i);
+    if (m) {
+      let raw = m[1].replace(/-/g, ' ').split(' ')[0];
+      if (raw.length > 2 && raw.length < 40) return raw;
+    }
+    return null;
+  }
+
+  // Intercept fetch
+  const origFetch = window.fetch;
+  window.fetch = function(resource, init) {
+    let url = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : '');
+    let name = nameFromUrl(url);
+    if (name && !logged.has(name)) {
+      logged.add(name);
+      addEntry(name, false);
+      total = Math.max(total, logged.size);
+    }
+    return origFetch.apply(this, arguments).then(function(resp) {
+      if (name) {
+        addEntry(name, true);
+        completed++;
+        updateBar();
+      }
+      return resp;
+    });
+  };
+
+  // Intercept XMLHttpRequest (Pyodide uses XHR in some WebKit views)
+  const origOpen = XMLHttpRequest.prototype.open;
+  const origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    this._trackName = nameFromUrl(url);
+    if (this._trackName && !logged.has(this._trackName)) {
+      logged.add(this._trackName);
+      addEntry(this._trackName, false);
+      total = Math.max(total, logged.size);
+    }
+    return origOpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function() {
+    var self = this;
+    if (self._trackName) {
+      self.addEventListener('load', function() {
+        addEntry(self._trackName, true);
+        completed++;
+        updateBar();
+      });
+    }
+    return origSend.apply(this, arguments);
+  };
+
+  // Fallback: animate progress bar on a timer in case hooks don't fire
+  var fallbackPct = 0;
+  var fallbackTimer = setInterval(function() {
+    if (document.getElementById('loading-screen').classList.contains('hidden')) {
+      clearInterval(fallbackTimer);
+      return;
+    }
+    // Only advance fallback if real progress hasn't moved the bar further
+    var realPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    if (fallbackPct <= realPct) {
+      fallbackPct = realPct;
+    } else {
+      bar.style.width = fallbackPct + '%';
+    }
+    // Slowly advance toward 90% (never 100 — that waits for real completion)
+    if (fallbackPct < 90) {
+      fallbackPct += 2;
+      bar.style.width = Math.max(realPct, fallbackPct) + '%';
+    }
+  }, 800);
+})();
+</script>
+
+<div id="graph-container"><canvas id="graph-canvas" width="800" height="500"></canvas></div>
+<div id="eq-list"></div>
+<div id="preview-bar"></div>
+<div id="input-bar">
+  <label for="eq-input">&gt;</label>
+  <input id="eq-input" type="text" placeholder="y = x^2  or  x^2+y^2 = 25  or  clear" autocomplete="off" autocapitalize="off" spellcheck="false">
+</div>
+<div id="status-bar">Loading...</div>
+
+<script type="py" async>
+import copy
+import math
+import re
+import io
+import base64
+
+import numpy as np
+import sympy as sp
+from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter, MultipleLocator
+
+from pyodide.ffi import create_proxy
+from js import document, window
+
+# ── Constants ───────────────────────────────────────────────────────────────
+
+COLORS = [
+    '#e74c3c', '#3498db', '#27ae60', '#f39c12',
+    '#8e44ad', '#16a085', '#e67e22', '#2980b9',
+]
+
+_X = sp.Symbol('x')
+_Y = sp.Symbol('y')
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+def _nice_step(raw):
+    if raw <= 0:
+        return 1.0
+    exp = math.floor(math.log10(raw))
+    frac = raw / 10 ** exp
+    nice = 1 if frac < 1.5 else 2 if frac < 3.5 else 5 if frac < 7.5 else 10
+    return float(nice * 10 ** exp)
+
+def _nice_bounds(lo, hi):
+    span = hi - lo if hi > lo else 1.0
+    step = _nice_step(span / 8)
+    return math.floor(lo / step) * step, math.ceil(hi / step) * step
+
+def _sanitize(y, y_min, y_max):
+    margin = (y_max - y_min) * 8
+    out = y.copy().astype(float)
+    out[np.abs(out) > abs(y_max) + abs(margin)] = np.nan
+    jump = (y_max - y_min) * 3
+    big = np.abs(np.diff(out, prepend=np.nan)) > jump
+    out[big] = np.nan
+    return out
+
+def _bisect(f, a, b, fa, fb, tol=1e-7, maxiter=52):
+    for _ in range(maxiter):
+        mid = (a + b) / 2
+        fm = f(mid)
+        if abs(fm) < tol or (b - a) < tol:
+            return mid
+        if math.copysign(1, fm) == math.copysign(1, fa):
+            a, fa = mid, fm
+        else:
+            b, fb = mid, fm
+    return (a + b) / 2
+
+def _refine_2d(fn1, fn2, x0, y0, iters=20, tol=1e-10):
+    h = 1e-7
+    x, y = x0, y0
+    for _ in range(iters):
+        try:
+            f1 = float(fn1(x, y))
+            f2 = float(fn2(x, y))
+        except Exception:
+            break
+        if abs(f1) < tol and abs(f2) < tol:
+            break
+        try:
+            f1x = (float(fn1(x + h, y)) - f1) / h
+            f1y = (float(fn1(x, y + h)) - f1) / h
+            f2x = (float(fn2(x + h, y)) - f2) / h
+            f2y = (float(fn2(x, y + h)) - f2) / h
+        except Exception:
+            break
+        det = f1x * f2y - f1y * f2x
+        if abs(det) < 1e-15:
+            break
+        x -= (f1 * f2y - f2 * f1y) / det
+        y -= (f2 * f1x - f1 * f2x) / det
+    return x, y
+
+def _dup(sx, sy, pts, tol=1e-4):
+    return any(abs(sx - p[0]) < tol and abs(sy - p[1]) < tol for p in pts)
+
+def _fc(v):
+    if v == int(v):
+        return str(int(v))
+    return f'{v:.3g}'
+
+# ── Equation ────────────────────────────────────────────────────────────────
+
+class Equation:
+    def __init__(self, name, raw, sym_expr, color, implicit=False, lhs_sym=None, rhs_sym=None):
+        self.name = name
+        self.raw = raw
+        self.sym_expr = sym_expr
+        self.color = color
+        self.implicit = implicit
+        self._lhs_sym = lhs_sym
+        self._rhs_sym = rhs_sym
+        if implicit:
+            self._fn = None
+            self._fn2d = sp.lambdify((_X, _Y), sym_expr, modules='numpy')
+            self._zero_fn2d = self._fn2d
+        else:
+            self._fn = sp.lambdify(_X, sym_expr, modules='numpy')
+            self._fn2d = None
+            self._zero_fn2d = sp.lambdify((_X, _Y), _Y - sym_expr, modules='numpy')
+
+    @property
+    def label(self):
+        if self.implicit:
+            return f'${sp.latex(self._lhs_sym)} = {sp.latex(self._rhs_sym)}$'
+        return f'$y={sp.latex(self.sym_expr)}$'
+
+    @property
+    def display_text(self):
+        if self.implicit:
+            return self.raw
+        return f'y = {self.raw}'
+
+    def evaluate(self, x_arr):
+        if self.implicit:
+            return None
+        try:
+            result = self._fn(x_arr)
+            if np.isscalar(result):
+                return np.full_like(x_arr, float(result), dtype=float)
+            return np.asarray(result, dtype=float)
+        except Exception:
+            return np.full_like(x_arr, np.nan, dtype=float)
+
+    def evaluate_2d(self, x_mesh, y_mesh):
+        try:
+            result = self._fn2d(x_mesh, y_mesh)
+            if np.isscalar(result):
+                return np.full_like(x_mesh, float(result), dtype=float)
+            return np.asarray(result, dtype=float)
+        except Exception:
+            return np.full_like(x_mesh, np.nan, dtype=float)
+
+# ── App ─────────────────────────────────────────────────────────────────────
+
+class GraphCalcApp:
+    def __init__(self):
+        self.equations = []
+        self.x_min, self.x_max = -10.0, 10.0
+        self.y_min, self.y_max = -10.0, 10.0
+        self._history = []
+        self._hpos = -1
+        self._snapshots = []
+        self._dpr = window.devicePixelRatio or 1
+
+    def _next_name(self):
+        used = {e.name for e in self.equations}
+        i = 1
+        while f'y{i}' in used:
+            i += 1
+        return f'y{i}'
+
+    def _save_snapshot(self):
+        self._snapshots.append((
+            copy.deepcopy(self.equations),
+            self.x_min, self.x_max, self.y_min, self.y_max,
+        ))
+
+    # ── Drawing ─────────────────────────────────────────────────────────────
+
+    def redraw(self):
+        container = document.getElementById('graph-container')
+        cw = container.clientWidth - 12
+        ch = container.clientHeight - 12
+        if cw < 100:
+            cw = 800
+        if ch < 100:
+            ch = 500
+
+        dpi = 100
+        fig = Figure(figsize=(cw/dpi, ch/dpi), dpi=dpi)
+        ax = fig.add_subplot(111)
+
+        ax.set_facecolor('#f4fff4')
+        fig.set_facecolor('#e0e0e0')
+        ax.set_xlim(self.x_min, self.x_max)
+        ax.set_ylim(self.y_min, self.y_max)
+
+        major_x = _nice_step((self.x_max - self.x_min) / 10)
+        major_y = _nice_step((self.y_max - self.y_min) / 10)
+        ax.xaxis.set_major_locator(MultipleLocator(major_x))
+        ax.yaxis.set_major_locator(MultipleLocator(major_y))
+        ax.xaxis.set_minor_locator(MultipleLocator(major_x / 5))
+        ax.yaxis.set_minor_locator(MultipleLocator(major_y / 5))
+
+        def _fmt(val, _pos):
+            if abs(val) < 1e-9:
+                return ''
+            return f'{val:g}'
+        ax.xaxis.set_major_formatter(FuncFormatter(_fmt))
+        ax.yaxis.set_major_formatter(FuncFormatter(_fmt))
+
+        ax.grid(True, which='minor', color='#a8d8a8', linewidth=0.45, linestyle='-', zorder=0)
+        ax.grid(True, which='major', color='#52a852', linewidth=0.9, linestyle='-', zorder=1)
+        ax.axhline(0, color='#1a1a1a', linewidth=1.8, zorder=2)
+        ax.axvline(0, color='#1a1a1a', linewidth=1.8, zorder=2)
+
+        for spine in ('left', 'bottom'):
+            ax.spines[spine].set_position('zero')
+            ax.spines[spine].set_linewidth(1.0)
+            ax.spines[spine].set_color('#555555')
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+
+        tick_size = max(8, int(8 * cw / 900))
+        ax.tick_params(axis='both', which='major', labelsize=tick_size, length=4, width=0.8, color='#444444')
+        ax.tick_params(axis='both', which='minor', length=2, width=0.5)
+
+        x_arr = np.linspace(self.x_min, self.x_max, 4000)
+        legend_handles = []
+        from itertools import combinations
+
+        for eq in self.equations:
+            if eq.implicit:
+                xi = np.linspace(self.x_min, self.x_max, 800)
+                yi = np.linspace(self.y_min, self.y_max, 800)
+                Xm, Ym = np.meshgrid(xi, yi)
+                Zm = eq.evaluate_2d(Xm, Ym)
+                ax.contour(Xm, Ym, Zm, levels=[0], colors=[eq.color], linewidths=2.4, zorder=5)
+                legend_handles.append(Line2D([0], [0], color=eq.color, linewidth=2.4, label=eq.label))
+            else:
+                y_arr = eq.evaluate(x_arr)
+                y_plot = _sanitize(y_arr, self.y_min, self.y_max)
+                line, = ax.plot(x_arr, y_plot, color=eq.color, linewidth=2.4, label=eq.label, zorder=5, solid_capstyle='round')
+                legend_handles.append(line)
+
+        # Intersections
+        pts = self._intersections(x_arr)
+        for ix, iy in pts:
+            ax.plot(ix, iy, 'o', color='#111111', markersize=7, zorder=8)
+            ax.annotate(
+                f'({_fc(ix)}, {_fc(iy)})',
+                xy=(ix, iy), xytext=(9, 9),
+                textcoords='offset points',
+                fontsize=tick_size, color='#111111',
+                bbox=dict(boxstyle='round,pad=0.3', fc='white', alpha=0.9, ec='#aaaaaa', lw=0.7),
+            )
+
+        if legend_handles:
+            ax.legend(handles=legend_handles, loc='upper right', fontsize=max(9, tick_size),
+                      framealpha=0.92, facecolor='white', edgecolor='#bbbbbb', borderpad=0.6)
+
+        fig.tight_layout(pad=0.6)
+
+        # Render to canvas
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=dpi * self._dpr, facecolor=fig.get_facecolor())
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode('ascii')
+        container.innerHTML = f'<img id="graph-img" src="data:image/png;base64,{b64}" style="width:{cw}px;height:{ch}px;" draggable="false">'
+
+        self._update_eq_list()
+
+    # ── Intersections ───────────────────────────────────────────────────────
+
+    def _intersections(self, x_arr):
+        from itertools import combinations
+        pts = []
+        for eq1, eq2 in combinations(self.equations, 2):
+            if not self._sym_intersect(eq1, eq2, pts):
+                if not eq1.implicit and not eq2.implicit:
+                    self._num_intersect(eq1, eq2, x_arr, pts)
+                elif eq1.implicit and eq2.implicit:
+                    self._num_intersect_implicit(eq1, eq2, pts)
+                else:
+                    exp, imp = (eq1, eq2) if not eq1.implicit else (eq2, eq1)
+                    self._num_intersect_mixed(exp, imp, x_arr, pts)
+        return pts
+
+    def _sym_intersect(self, eq1, eq2, pts):
+        try:
+            e1 = _Y - eq1.sym_expr if not eq1.implicit else eq1.sym_expr
+            e2 = _Y - eq2.sym_expr if not eq2.implicit else eq2.sym_expr
+            sols = sp.solve([e1, e2], [_X, _Y])
+            if isinstance(sols, dict):
+                sols = [(sols.get(_X), sols.get(_Y))]
+            found = False
+            for sol in sols:
+                try:
+                    sx_c, sy_c = complex(sol[0]), complex(sol[1])
+                    if abs(sx_c.imag) > 1e-8 or abs(sy_c.imag) > 1e-8:
+                        continue
+                    sx, sy = float(sx_c.real), float(sy_c.real)
+                except Exception:
+                    continue
+                if not (self.x_min <= sx <= self.x_max):
+                    continue
+                if not (self.y_min <= sy <= self.y_max):
+                    continue
+                if not _dup(sx, sy, pts):
+                    pts.append((sx, sy))
+                    found = True
+            return found
+        except Exception:
+            return False
+
+    def _num_intersect(self, eq1, eq2, x_arr, pts):
+        try:
+            y1 = eq1.evaluate(x_arr)
+            y2 = eq2.evaluate(x_arr)
+            diff = y1 - y2
+            valid = ~(np.isnan(diff) | np.isinf(diff))
+            sign = np.sign(diff)
+            changes = np.where((np.diff(sign) != 0) & valid[:-1] & valid[1:])[0]
+            for idx in changes:
+                a, b = float(x_arr[idx]), float(x_arr[idx + 1])
+                da, db = float(diff[idx]), float(diff[idx + 1])
+                sx = _bisect(lambda xv: float(eq1._fn(xv)) - float(eq2._fn(xv)), a, b, da, db)
+                sy = float(eq1._fn(sx))
+                if self.y_min <= sy <= self.y_max and not _dup(sx, sy, pts):
+                    pts.append((sx, sy))
+        except Exception:
+            pass
+
+    def _num_intersect_mixed(self, explicit_eq, implicit_eq, x_arr, pts):
+        try:
+            y_arr = explicit_eq.evaluate(x_arr)
+            vals = implicit_eq.evaluate_2d(x_arr, y_arr)
+            valid = ~(np.isnan(vals) | np.isinf(vals))
+            sign = np.sign(vals)
+            changes = np.where((np.diff(sign) != 0) & valid[:-1] & valid[1:])[0]
+            for idx in changes:
+                a, b = float(x_arr[idx]), float(x_arr[idx + 1])
+                fa, fb = float(vals[idx]), float(vals[idx + 1])
+                def _f(xv):
+                    yv = float(explicit_eq._fn(xv))
+                    return float(implicit_eq._fn2d(xv, yv))
+                sx = _bisect(_f, a, b, fa, fb)
+                sy = float(explicit_eq._fn(sx))
+                if self.y_min <= sy <= self.y_max and not _dup(sx, sy, pts):
+                    pts.append((sx, sy))
+        except Exception:
+            pass
+
+    def _num_intersect_implicit(self, eq1, eq2, pts):
+        try:
+            nx = ny = 400
+            xi = np.linspace(self.x_min, self.x_max, nx)
+            yi = np.linspace(self.y_min, self.y_max, ny)
+            Xm, Ym = np.meshgrid(xi, yi)
+            Z1 = eq1.evaluate_2d(Xm, Ym)
+            Z2 = eq2.evaluate_2d(Xm, Ym)
+            z1_min = np.minimum(np.minimum(Z1[:-1, :-1], Z1[:-1, 1:]), np.minimum(Z1[1:, :-1], Z1[1:, 1:]))
+            z1_max = np.maximum(np.maximum(Z1[:-1, :-1], Z1[:-1, 1:]), np.maximum(Z1[1:, :-1], Z1[1:, 1:]))
+            z2_min = np.minimum(np.minimum(Z2[:-1, :-1], Z2[:-1, 1:]), np.minimum(Z2[1:, :-1], Z2[1:, 1:]))
+            z2_max = np.maximum(np.maximum(Z2[:-1, :-1], Z2[:-1, 1:]), np.maximum(Z2[1:, :-1], Z2[1:, 1:]))
+            both = ((z1_min <= 0) & (z1_max >= 0) & (z2_min <= 0) & (z2_max >= 0))
+            cells = np.argwhere(both)
+            for i, j in cells:
+                sx = (xi[j] + xi[j + 1]) / 2
+                sy = (yi[i] + yi[i + 1]) / 2
+                sx, sy = _refine_2d(eq1._zero_fn2d, eq2._zero_fn2d, sx, sy)
+                if (self.x_min <= sx <= self.x_max and self.y_min <= sy <= self.y_max and not _dup(sx, sy, pts)):
+                    pts.append((sx, sy))
+        except Exception:
+            pass
+
+    # ── Auto-fit ────────────────────────────────────────────────────────────
+
+    def _find_all_intersections(self, x_arr, eqs=None):
+        from itertools import combinations
+        pts = []
+        for eq1, eq2 in combinations(eqs or self.equations, 2):
+            found_sym = False
+            try:
+                e1 = _Y - eq1.sym_expr if not eq1.implicit else eq1.sym_expr
+                e2 = _Y - eq2.sym_expr if not eq2.implicit else eq2.sym_expr
+                sols = sp.solve([e1, e2], [_X, _Y])
+                if isinstance(sols, dict):
+                    sols = [(sols.get(_X), sols.get(_Y))]
+                for sol in sols:
+                    try:
+                        sx_c, sy_c = complex(sol[0]), complex(sol[1])
+                        if abs(sx_c.imag) > 1e-8 or abs(sy_c.imag) > 1e-8:
+                            continue
+                        sx, sy = float(sx_c.real), float(sy_c.real)
+                    except Exception:
+                        continue
+                    if np.isfinite(sx) and np.isfinite(sy) and not _dup(sx, sy, pts):
+                        pts.append((sx, sy))
+                        found_sym = True
+            except Exception:
+                pass
+            if not found_sym and not eq1.implicit and not eq2.implicit:
+                try:
+                    y1 = eq1.evaluate(x_arr)
+                    y2 = eq2.evaluate(x_arr)
+                    diff = y1 - y2
+                    valid = ~(np.isnan(diff) | np.isinf(diff))
+                    sign = np.sign(diff)
+                    changes = np.where((np.diff(sign) != 0) & valid[:-1] & valid[1:])[0]
+                    for idx in changes:
+                        a, b = float(x_arr[idx]), float(x_arr[idx + 1])
+                        da, db = float(diff[idx]), float(diff[idx + 1])
+                        sx = _bisect(lambda xv: float(eq1._fn(xv)) - float(eq2._fn(xv)), a, b, da, db)
+                        sy = float(eq1._fn(sx))
+                        if np.isfinite(sy) and not _dup(sx, sy, pts):
+                            pts.append((sx, sy))
+                except Exception:
+                    pass
+        return pts
+
+    def _auto_fit(self):
+        explicit = [e for e in self.equations if not e.implicit]
+        if not explicit:
+            self.x_min, self.x_max = -10.0, 10.0
+            self.y_min, self.y_max = -10.0, 10.0
+            return
+        wide_x = np.linspace(-100.0, 100.0, 40001)
+        intersect_pts = self._find_all_intersections(wide_x, explicit)
+        if intersect_pts:
+            ix_vals = [p[0] for p in intersect_pts]
+            x_center = (min(ix_vals) + max(ix_vals)) / 2
+            x_half = max((max(ix_vals) - min(ix_vals)) / 2, 2.0) * 1.5
+        else:
+            x_center = 0.0
+            x_half = 10.0
+        cand_x_min = x_center - x_half
+        cand_x_max = x_center + x_half
+        eval_x = np.linspace(cand_x_min, cand_x_max, 4000)
+        all_y = []
+        for eq in explicit:
+            y = eq.evaluate(eval_x)
+            finite = y[np.isfinite(y)]
+            if len(finite):
+                all_y.append(finite)
+        for _, iy in intersect_pts:
+            all_y.append(np.array([iy]))
+        if all_y:
+            combined = np.concatenate(all_y)
+            y_lo = float(np.percentile(combined, 2))
+            y_hi = float(np.percentile(combined, 98))
+            y_center = (y_lo + y_hi) / 2
+            y_half = max((y_hi - y_lo) / 2, 2.0) * 1.4
+        else:
+            y_center = 0.0
+            y_half = 10.0
+        self.x_min, self.x_max = _nice_bounds(cand_x_min, cand_x_max)
+        self.y_min, self.y_max = _nice_bounds(y_center - y_half, y_center + y_half)
+
+    # ── Input dispatch ──────────────────────────────────────────────────────
+
+    def dispatch(self, text):
+        lower = text.lower().strip()
+
+        if lower == 'undo':
+            self._undo()
+            return
+
+        if lower == 'clear':
+            self._save_snapshot()
+            self.equations.clear()
+            set_status('Cleared.')
+            self.redraw()
+            return
+
+        m = re.match(r'^(?:clear|del|remove)\s+(y\d*)$', lower)
+        if m:
+            name = m.group(1)
+            self._save_snapshot()
+            before = len(self.equations)
+            self.equations = [e for e in self.equations if e.name != name]
+            msg = f'Removed {name}.' if len(self.equations) < before else f'{name} not found.'
+            set_status(msg)
+            self._auto_fit()
+            self.redraw()
+            return
+
+        m = re.match(r'^(xmin|xmax|ymin|ymax)\s*=\s*(.+)$', lower)
+        if m:
+            attr, val_str = m.group(1), m.group(2)
+            try:
+                val = float(sp.sympify(val_str))
+                self._save_snapshot()
+                setattr(self, attr.replace('min', '_min').replace('max', '_max').replace('x_', 'x_').replace('y_', 'y_'), val)
+                if attr == 'xmin': self.x_min = val
+                elif attr == 'xmax': self.x_max = val
+                elif attr == 'ymin': self.y_min = val
+                else: self.y_max = val
+                set_status(f'{attr} = {val}')
+                self.redraw()
+            except Exception:
+                set_status(f'Bad value for {attr}.')
+            return
+
+        # y = expr (explicit)
+        m = re.match(r'^y\s*=\s*(.+)$', text, re.IGNORECASE)
+        if m:
+            rhs = m.group(1).strip()
+            if not re.search(r'\by\b', rhs, re.IGNORECASE):
+                name = self._next_name()
+                self._add_eq(name, rhs)
+                return
+
+        # General implicit equation
+        m = re.match(r'^(.+?)\s*=\s*(.+)$', text)
+        if m:
+            self._add_implicit_eq(m.group(1).strip(), m.group(2).strip())
+            return
+
+        set_status("Unknown input. Try: y=x^2 | x^2+y^2=25 | clear | undo")
+
+    def _undo(self):
+        if not self._snapshots:
+            set_status('Nothing to undo.')
+            return
+        eqs, xn, xx, yn, yx = self._snapshots.pop()
+        self.equations = eqs
+        self.x_min, self.x_max = xn, xx
+        self.y_min, self.y_max = yn, yx
+        n = len(self.equations)
+        set_status(f"Undo - {'no equations' if n == 0 else f'{n} equation(s)'} remaining.")
+        self.redraw()
+
+    def _add_eq(self, name, raw):
+        try:
+            expr_str = raw.replace('^', '**')
+            self._save_snapshot()
+            sym_expr = sp.sympify(expr_str, locals={'x': _X, 'e': sp.E, 'pi': sp.pi})
+            self.equations = [e for e in self.equations if e.name != name]
+            color = COLORS[len(self.equations) % len(COLORS)]
+            self.equations.append(Equation(name, raw, sym_expr, color))
+            n = len(self.equations)
+            set_status(f"Plotted y = {raw}  ({'1 equation' if n == 1 else f'{n} equations'})")
+            self._auto_fit()
+            self.redraw()
+        except Exception as exc:
+            set_status(f'Error: {exc}')
+
+    def _add_implicit_eq(self, lhs_str, rhs_str):
+        try:
+            locals_dict = {'x': _X, 'y': _Y, 'e': sp.E, 'pi': sp.pi}
+            lhs_expr = sp.sympify(lhs_str.replace('^', '**'), locals=locals_dict)
+            rhs_expr = sp.sympify(rhs_str.replace('^', '**'), locals=locals_dict)
+            implicit_expr = lhs_expr - rhs_expr
+            self._save_snapshot()
+            name = self._next_name()
+            color = COLORS[len(self.equations) % len(COLORS)]
+            self.equations.append(Equation(
+                name, f'{lhs_str} = {rhs_str}', implicit_expr, color,
+                implicit=True, lhs_sym=lhs_expr, rhs_sym=rhs_expr,
+            ))
+            n = len(self.equations)
+            set_status(f"Plotted {lhs_str} = {rhs_str}  ({'1 equation' if n == 1 else f'{n} equations'})")
+            self._auto_fit()
+            self.redraw()
+        except Exception as exc:
+            set_status(f'Error: {exc}')
+
+    def _update_eq_list(self):
+        el = document.getElementById('eq-list')
+        el.innerHTML = ''
+        for eq in self.equations:
+            pill = document.createElement('span')
+            pill.className = 'eq-pill'
+            pill.style.background = eq.color
+            pill.innerHTML = f'{eq.name}: {eq.display_text} <span class="x-btn" data-name="{eq.name}">x</span>'
+            el.appendChild(pill)
+
+    def zoom(self, factor, cx=None, cy=None):
+        if cx is None:
+            cx = (self.x_min + self.x_max) / 2
+        if cy is None:
+            cy = (self.y_min + self.y_max) / 2
+        dx = (self.x_max - self.x_min) / 2 * factor
+        dy = (self.y_max - self.y_min) / 2 * factor
+        self.x_min, self.x_max = cx - dx, cx + dx
+        self.y_min, self.y_max = cy - dy, cy + dy
+        self.redraw()
+
+
+# ── DOM wiring ──────────────────────────────────────────────────────────────
+
+app = GraphCalcApp()
+
+def set_status(msg):
+    document.getElementById('status-bar').textContent = msg
+
+def _render_latex_preview(text):
+    """Convert user input to LaTeX and render in the preview bar via KaTeX."""
+    preview = document.getElementById('preview-bar')
+    if not text.strip():
+        preview.innerHTML = ''
+        return
+    try:
+        raw = text.strip()
+        locals_dict = {'x': _X, 'y': _Y, 'e': sp.E, 'pi': sp.pi}
+
+        m = re.match(r'^(.+?)\s*=\s*(.+)$', raw)
+        if m:
+            lhs_str, rhs_str = m.group(1).strip(), m.group(2).strip()
+            lhs_expr = sp.sympify(lhs_str.replace('^', '**'), locals=locals_dict)
+            rhs_expr = sp.sympify(rhs_str.replace('^', '**'), locals=locals_dict)
+            latex_str = sp.latex(lhs_expr) + ' = ' + sp.latex(rhs_expr)
+        else:
+            expr = sp.sympify(raw.replace('^', '**'), locals=locals_dict)
+            latex_str = sp.latex(expr)
+
+        window.katex.render(latex_str, preview, window.Object.fromEntries(
+            [['throwOnError', False], ['displayMode', False]]
+        ))
+    except Exception:
+        preview.innerHTML = ''
+
+def on_input(event):
+    inp = document.getElementById('eq-input')
+    _render_latex_preview(inp.value)
+
+def on_enter(event):
+    if event.key != 'Enter':
+        return
+    inp = document.getElementById('eq-input')
+    text = inp.value.strip()
+    inp.value = ''
+    document.getElementById('preview-bar').innerHTML = ''
+    if not text:
+        return
+    if not app._history or app._history[-1] != text:
+        app._history.append(text)
+    app._hpos = len(app._history)
+    set_status('Computing...')
+    app.dispatch(text)
+
+def on_keydown(event):
+    inp = document.getElementById('eq-input')
+    if event.key == 'ArrowUp':
+        event.preventDefault()
+        if app._history and app._hpos > 0:
+            app._hpos -= 1
+            inp.value = app._history[app._hpos]
+    elif event.key == 'ArrowDown':
+        event.preventDefault()
+        if app._hpos < len(app._history) - 1:
+            app._hpos += 1
+            inp.value = app._history[app._hpos]
+        else:
+            app._hpos = len(app._history)
+            inp.value = ''
+
+def on_wheel(event):
+    event.preventDefault()
+    factor = 1.15 if event.deltaY < 0 else 1 / 1.15
+    app.zoom(factor)
+
+def on_click(event):
+    target = event.target
+    if target.classList.contains('x-btn'):
+        name = target.getAttribute('data-name')
+        if name:
+            app._save_snapshot()
+            before = len(app.equations)
+            app.equations = [e for e in app.equations if e.name != name]
+            if len(app.equations) < before:
+                set_status(f'Removed {name}.')
+                app._auto_fit()
+                app.redraw()
+
+# Touch zoom support
+_touch_dist = [0.0]
+
+def on_touchstart(event):
+    if event.touches.length == 2:
+        event.preventDefault()
+        t = event.touches
+        _touch_dist[0] = ((t[0].clientX - t[1].clientX)**2 + (t[0].clientY - t[1].clientY)**2)**0.5
+
+def on_touchmove(event):
+    if event.touches.length == 2:
+        event.preventDefault()
+        t = event.touches
+        dist = ((t[0].clientX - t[1].clientX)**2 + (t[0].clientY - t[1].clientY)**2)**0.5
+        if _touch_dist[0] > 0:
+            ratio = _touch_dist[0] / dist
+            app.zoom(ratio)
+        _touch_dist[0] = dist
+
+# Bind events
+_enter_proxy = create_proxy(on_enter)
+_keydown_proxy = create_proxy(on_keydown)
+_input_proxy = create_proxy(on_input)
+_wheel_proxy = create_proxy(on_wheel)
+_click_proxy = create_proxy(on_click)
+_touchstart_proxy = create_proxy(on_touchstart)
+_touchmove_proxy = create_proxy(on_touchmove)
+
+inp_el = document.getElementById('eq-input')
+inp_el.addEventListener('keydown', _enter_proxy)
+inp_el.addEventListener('keydown', _keydown_proxy)
+inp_el.addEventListener('input', _input_proxy)
+
+container = document.getElementById('graph-container')
+container.addEventListener('wheel', _wheel_proxy)
+container.addEventListener('touchstart', _touchstart_proxy)
+container.addEventListener('touchmove', _touchmove_proxy)
+
+document.getElementById('eq-list').addEventListener('click', _click_proxy)
+
+# Resize handler
+def on_resize(event=None):
+    app.redraw()
+
+_resize_proxy = create_proxy(on_resize)
+window.addEventListener('resize', _resize_proxy)
+
+# Initial draw
+document.getElementById('loading-screen').classList.add('hidden')
+set_status("Type an equation: y = x^2  |  x^2 + y^2 = 25  |  clear  |  undo  |  scroll to zoom")
+app.redraw()
+document.getElementById('eq-input').focus()
+</script>
+
+</body>
+</html>
