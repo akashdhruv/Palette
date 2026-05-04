@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Palette - Math Tools</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    color: #e8e8ff;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 2.4rem;
+    margin-bottom: 8px;
+    color: #e8e8ff;
+  }
+  .subtitle {
+    color: #8888bb;
+    font-size: 14px;
+    margin-bottom: 48px;
+    text-align: center;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    width: 100%;
+    max-width: 960px;
+  }
+  .card {
+    background: #16213e;
+    border: 1px solid #333366;
+    border-radius: 10px;
+    padding: 28px 24px;
+    text-decoration: none;
+    color: #e8e8ff;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card:hover {
+    border-color: #5555bb;
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(85, 85, 187, 0.15);
+  }
+  .card h2 {
+    font-size: 1.2rem;
+    color: #9999cc;
+  }
+  .card p {
+    font-size: 13px;
+    color: #8888bb;
+    line-height: 1.5;
+  }
+  .card .arrow {
+    margin-top: auto;
+    padding-top: 12px;
+    color: #5555bb;
+    font-size: 14px;
+    font-weight: bold;
+  }
+  .card:hover .arrow { color: #9999cc; }
+</style>
+</head>
+<body>
+  <h1>Palette</h1>
+  <p class="subtitle">Free, interactive math tools for the classroom</p>
+  <div class="grid">
+    <a class="card" href="graph.html">
+      <h2>Graph Calculator</h2>
+      <p>Plot explicit and implicit equations, find intersections, and explore transformations with LaTeX-rendered labels.</p>
+      <span class="arrow">Open &rarr;</span>
+    </a>
+    <a class="card" href="distribution.html">
+      <h2>Normal Distribution</h2>
+      <p>Visual z-table replacement. Convert between z-scores and probabilities with real-time shaded area graphs.</p>
+      <span class="arrow">Open &rarr;</span>
+    </a>
+    <a class="card" href="grouped-data.html">
+      <h2>Grouped Data</h2>
+      <p>Enter class intervals and frequencies to compute mean, median, and mode with histograms and ogive curves.</p>
+      <span class="arrow">Open &rarr;</span>
+    </a>
+  </div>
+</body>
+</html>
