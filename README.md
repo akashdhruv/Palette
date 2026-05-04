@@ -1,5 +1,7 @@
 # Palette
 
+**Web:** https://akashdhruv.github.io/Palette
+
 **Free, ready-to-use math tools for the high school classroom.**
 
 Palette is a set of interactive calculators that cover common topics in algebra, pre-calculus, and statistics. Every tool runs directly in the browser -- no accounts, no installs, no app stores. Open the file and hand the device to a student.
