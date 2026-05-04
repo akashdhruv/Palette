@@ -6,6 +6,10 @@
 <title>Grouped Data Calculator</title>
 <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
 <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.getElementById('formula-bar'), {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -78,16 +82,50 @@
     overflow-y: auto;
   }
 
-  #input-panel h2 {
-    padding: 12px 14px 8px;
+  #header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid #2a2a4e;
+  }
+  #header-row h2 {
     font-size: 16px;
     color: #9999cc;
     font-weight: bold;
-    border-bottom: 1px solid #2a2a4e;
+  }
+  #header-row .btn-group {
+    display: flex;
+    gap: 5px;
+  }
+  #header-row .btn-group button {
+    background: #16213e;
+    color: #9999cc;
+    border: 1px solid #333366;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #header-row .btn-group button:hover {
+    background: #5555bb;
+    color: #fff;
+    border-color: #5555bb;
+  }
+  #header-row .btn-group #btn-compute {
+    background: #27ae60;
+    color: #fff;
+    border-color: #27ae60;
+    font-weight: bold;
+  }
+  #header-row .btn-group #btn-compute:hover {
+    background: #2ecc71;
+    border-color: #2ecc71;
   }
 
   #data-table-container {
-    flex: 1;
     overflow-y: auto;
     padding: 8px 10px;
   }
@@ -146,39 +184,7 @@
   }
   td .del-btn:hover { opacity: 1; }
 
-  #btn-row {
-    display: flex;
-    gap: 6px;
-    padding: 8px 10px;
-    border-top: 1px solid #2a2a4e;
-  }
-  #btn-row button {
-    flex: 1;
-    background: #16213e;
-    color: #9999cc;
-    border: 1px solid #333366;
-    border-radius: 5px;
-    padding: 8px 10px;
-    font-size: 15px;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  #btn-row button:hover {
-    background: #5555bb;
-    color: #fff;
-    border-color: #5555bb;
-  }
-  #btn-compute {
-    background: #27ae60 !important;
-    color: #fff !important;
-    border-color: #27ae60 !important;
-    font-weight: bold;
-  }
-  #btn-compute:hover {
-    background: #2ecc71 !important;
-    border-color: #2ecc71 !important;
-  }
+  /* btn-row removed — buttons moved to header */
 
   /* Right panel: results + chart */
   #output-panel {
@@ -242,13 +248,32 @@
   }
 
   #formula-bar {
-    padding: 10px 12px;
-    font-size: 16px;
-    color: #666699;
+    flex: 1;
+    padding: 16px 18px;
+    color: #9999cc;
     border-top: 1px solid #2a2a4e;
-    line-height: 2.0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
   }
-  #formula-bar span { color: #8888bb; font-weight: bold; }
+  #formula-bar .katex { color: #ccccff; }
+  #formula-bar .formula-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 15px;
+  }
+  #formula-bar .formula-row .katex { font-size: 1.25em; }
+  #formula-bar .formula-label {
+    color: #8888bb;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    min-width: 70px;
+  }
 
   /* Mobile responsive */
   @media (max-width: 700px) {
@@ -296,7 +321,15 @@
 
 <div id="main-container">
   <div id="input-panel">
-    <h2>Grouped Frequency Distribution</h2>
+    <div id="header-row">
+      <h2>Grouped Frequency Distribution</h2>
+      <div class="btn-group">
+        <button id="btn-add">+ Row</button>
+        <button id="btn-clear">Clear</button>
+        <button id="btn-example">Example</button>
+        <button id="btn-compute">Compute</button>
+      </div>
+    </div>
     <div id="data-table-container">
       <table>
         <thead>
@@ -307,22 +340,20 @@
             <th>Midpt (x)</th>
             <th>CF</th>
             <th>f*x</th>
+            <th>x²</th>
+            <th>f*x²</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="data-body"></tbody>
       </table>
     </div>
-    <div id="btn-row">
-      <button id="btn-add">+ Add Row</button>
-      <button id="btn-clear">Clear</button>
-      <button id="btn-example">Example</button>
-      <button id="btn-compute">Compute</button>
-    </div>
     <div id="formula-bar">
-      <span>Mean</span> = Sum(f*x) / N<br>
-      <span>Median</span> = L + ((N/2 - CF) / f) * h<br>
-      <span>Mode</span> = L + ((f1 - f0) / (2*f1 - f0 - f2)) * h
+      <div class="formula-row"><span class="formula-label">Mean</span> $\bar{x} = \dfrac{\sum fx}{N}$</div>
+      <div class="formula-row"><span class="formula-label">Variance</span> $\sigma^2 = \dfrac{\sum fx^2}{N} - \bar{x}^2$</div>
+      <div class="formula-row"><span class="formula-label">Std Dev</span> $\sigma = \sqrt{\sigma^2}$</div>
+      <div class="formula-row"><span class="formula-label">Median</span> $\text{Median} = L + \dfrac{\frac{N}{2} - CF}{f} \cdot h$</div>
+      <div class="formula-row"><span class="formula-label">Mode</span> $\text{Mode} = L + \dfrac{f_1 - f_0}{2f_1 - f_0 - f_2} \cdot h$</div>
     </div>
   </div>
   <div id="output-panel">
@@ -445,6 +476,18 @@ def render_table():
         td6.id = f'fx-{i}'
         td6.textContent = '-'
         tr.appendChild(td6)
+        # x² (computed)
+        td_x2 = document.createElement('td')
+        td_x2.className = 'computed'
+        td_x2.id = f'x2-{i}'
+        td_x2.textContent = '-'
+        tr.appendChild(td_x2)
+        # f*x² (computed)
+        td_fx2 = document.createElement('td')
+        td_fx2.className = 'computed'
+        td_fx2.id = f'fx2-{i}'
+        td_fx2.textContent = '-'
+        tr.appendChild(td_fx2)
         # Delete button
         td7 = document.createElement('td')
         btn = document.createElement('button')
@@ -499,20 +542,36 @@ def compute():
         running += f
         cf.append(running)
 
+    # x² and f*x²
+    x_squared = [x ** 2 for x in midpoints]
+    fx_squared = [f * x2 for f, x2 in zip(freqs, x_squared)]
+
     # Update table computed columns
     for i in range(len(classes)):
         mid_el = document.getElementById(f'mid-{i}')
         cf_el = document.getElementById(f'cf-{i}')
         fx_el = document.getElementById(f'fx-{i}')
+        x2_el = document.getElementById(f'x2-{i}')
+        fx2_el = document.getElementById(f'fx2-{i}')
         if mid_el:
             mid_el.textContent = f'{midpoints[i]:.1f}'
         if cf_el:
             cf_el.textContent = f'{cf[i]:.0f}'
         if fx_el:
             fx_el.textContent = f'{fx[i]:.1f}'
+        if x2_el:
+            x2_el.textContent = f'{x_squared[i]:.2f}'
+        if fx2_el:
+            fx2_el.textContent = f'{fx_squared[i]:.2f}'
 
     # ── Mean ──
     mean_val = sum(fx) / N
+
+    # ── Variance & Standard Deviation ──
+    # σ² = Σfx²/n - x̄²
+    sum_fx2 = sum(fx_squared)
+    variance = sum_fx2 / N - mean_val ** 2
+    std_dev = variance ** 0.5
 
     # ── Median (grouped) ──
     # Find median class: first class where CF >= N/2
@@ -573,29 +632,32 @@ def compute():
             <tr>
                 <th>N</th>
                 <th>Sum(f*x)</th>
+                <th>Sum(f*x²)</th>
                 <th>Mean</th>
+                <th>Variance (σ²)</th>
+                <th>Std Dev (σ)</th>
                 <th>Median (formula)</th>
-                <th>Median (simplified)</th>
                 <th>Mode (formula)</th>
-                <th>Mode (simplified)</th>
             </tr>
             <tr>
                 <td>{N:.0f}</td>
                 <td>{sum(fx):.2f}</td>
+                <td>{sum_fx2:.2f}</td>
                 <td>{mean_val:.4f}</td>
+                <td>{variance:.4f}</td>
+                <td>{std_dev:.4f}</td>
                 <td>{median_val:.4f}</td>
-                <td>{median_simple:.1f}</td>
                 <td>{mode_text}</td>
-                <td>{mode_simple_text}</td>
             </tr>
             <tr>
                 <td class="sub-val">Total freq</td>
-                <td class="sub-val">Total</td>
-                <td class="sub-val">Sum(f*x)/N</td>
+                <td class="sub-val">Σfx</td>
+                <td class="sub-val">Σfx²</td>
+                <td class="sub-val">Σfx/N</td>
+                <td class="sub-val">Σfx²/N − x̄²</td>
+                <td class="sub-val">√variance</td>
                 <td class="sub-val">Class: {lowers[median_class_idx]}-{uppers[median_class_idx]}</td>
-                <td class="sub-val">Midpoint of median class</td>
                 <td class="sub-val">Class: {lowers[mode_class_idx]}-{uppers[mode_class_idx]}, f={max_freq:.0f}</td>
-                <td class="sub-val">Midpoint of modal class</td>
             </tr>
         </table>
     '''
