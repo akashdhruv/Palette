@@ -117,6 +117,7 @@
   </div>
   <div id="mode-toggle">
     <button id="btn-z-to-p" class="active">Z &rarr; P</button>
+    <button id="btn-x-to-zp">X &rarr; Z,P</button>
     <button id="btn-range">P(Range)</button>
     <button id="btn-p-to-z">P &rarr; Z</button>
   </div>
@@ -145,6 +146,7 @@
   const rangeGroup = document.getElementById('range-group');
   const btnZtoP = document.getElementById('btn-z-to-p');
   const btnRange = document.getElementById('btn-range');
+  const btnXtoZP = document.getElementById('btn-x-to-zp');
   const btnPtoZ = document.getElementById('btn-p-to-z');
 
   let mode = 'z-to-p'; // or 'p-to-z'
@@ -247,6 +249,11 @@
       xMark = mu + zVal * sigma;
       pVal = normalCDF(xMark, mu, sigma);
       resultBar.innerHTML = `P(Z &lt; ${zVal.toFixed(4)}) = <span class="value">${pVal.toFixed(6)}</span> &nbsp;|&nbsp; x = ${xMark.toFixed(4)}`;
+    } else if (mode === 'x-to-zp') {
+      xMark = val;
+      zVal = (xMark - mu) / sigma;
+      pVal = normalCDF(xMark, mu, sigma);
+      resultBar.innerHTML = `x = ${xMark.toFixed(4)} &nbsp;→&nbsp; z = <span class="value">${zVal.toFixed(4)}</span> &nbsp;|&nbsp; P(Z &lt; ${zVal.toFixed(4)}) = <span class="value">${pVal.toFixed(6)}</span>`;
     } else if (mode === 'range') {
       zVal = val;
       zVal2 = parseFloat(valueInput2.value) || 0;
@@ -271,7 +278,7 @@
     const yMax = normalPDF(mu, mu, sigma) * 1.15;
     const yMin = -yMax * 0.08;
 
-    const pad = { left: 50, right: 20, top: 20, bottom: 35 };
+    const pad = { left: 50, right: 20, top: 20, bottom: 48 };
     const plotW = cw - pad.left - pad.right;
     const plotH = ch - pad.top - pad.bottom;
 
@@ -351,12 +358,16 @@
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 4]);
         const mx = toCanvasX(xPos);
-        ctx.beginPath(); ctx.moveTo(mx, baseY); ctx.lineTo(mx, toCanvasY(normalPDF(xPos, mu, sigma))); ctx.stroke();
+        const markerTop = toCanvasY(normalPDF(xPos, mu, sigma));
+        ctx.beginPath(); ctx.moveTo(mx, baseY); ctx.lineTo(mx, markerTop); ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = '#16213e';
         ctx.font = '12px monospace';
         ctx.textAlign = 'center';
         ctx.fillText(`z=${zLabel}`, mx, baseY + 14);
+        ctx.fillStyle = '#3498db';
+        ctx.font = '11px monospace';
+        ctx.fillText(`x=${xPos.toFixed(2)}`, mx, markerTop - 6);
       }
     }
     if (mode === 'range') {
@@ -366,16 +377,18 @@
       drawMarker(xMark, zVal.toFixed(2));
     }
 
-    // X-axis labels (z-scores)
-    ctx.fillStyle = '#333';
+    // X-axis labels (z-scores and x values)
     ctx.font = '11px monospace';
     ctx.textAlign = 'center';
     for (let i = -4; i <= 4; i++) {
       const x = mu + i * sigma;
       const cx = toCanvasX(x);
-      if (i !== 0 || mu === 0) {
-        ctx.fillText(i === 0 ? '0' : `${i}σ`, cx, baseY + 28);
-      }
+      ctx.fillStyle = '#333';
+      ctx.fillText(i === 0 ? '0' : `${i}σ`, cx, baseY + 28);
+      ctx.fillStyle = '#3498db';
+      ctx.font = '10px monospace';
+      ctx.fillText(x % 1 === 0 ? x.toFixed(0) : x.toFixed(2), cx, baseY + 40);
+      ctx.font = '11px monospace';
     }
 
     // Y-axis labels
@@ -391,6 +404,8 @@
     ctx.textAlign = 'left';
     if (mode === 'range') {
       ctx.fillText(`N(μ=${mu}, σ=${sigma})  P(${zVal.toFixed(2)}<Z<${zVal2.toFixed(2)}) = ${pRange.toFixed(4)}`, pad.left + 5, pad.top + 15);
+    } else if (mode === 'x-to-zp') {
+      ctx.fillText(`N(μ=${mu}, σ=${sigma})  x=${xMark.toFixed(2)} → z=${zVal.toFixed(2)}, P=${pVal.toFixed(4)}`, pad.left + 5, pad.top + 15);
     } else {
       ctx.fillText(`N(μ=${mu}, σ=${sigma})  P(Z<${zVal.toFixed(2)}) = ${pVal.toFixed(4)}`, pad.left + 5, pad.top + 15);
     }
@@ -406,6 +421,7 @@
   function setMode(newMode) {
     mode = newMode;
     btnZtoP.classList.remove('active');
+    btnXtoZP.classList.remove('active');
     btnRange.classList.remove('active');
     btnPtoZ.classList.remove('active');
     rangeGroup.style.display = 'none';
@@ -415,6 +431,12 @@
       valueInput.value = '0';
       valueInput.step = '0.01';
       statusBar.innerHTML = 'P(Z &lt; z) — enter z-score to find cumulative probability';
+    } else if (mode === 'x-to-zp') {
+      btnXtoZP.classList.add('active');
+      inputLabel.textContent = 'X:';
+      valueInput.value = mu.toString();
+      valueInput.step = '0.1';
+      statusBar.innerHTML = 'X &rarr; Z, P — enter an x value to find its z-score and probability';
     } else if (mode === 'range') {
       btnRange.classList.add('active');
       inputLabel.textContent = 'Z₁:';
@@ -434,6 +456,7 @@
   }
 
   btnZtoP.addEventListener('click', () => setMode('z-to-p'));
+  btnXtoZP.addEventListener('click', () => setMode('x-to-zp'));
   btnRange.addEventListener('click', () => setMode('range'));
   btnPtoZ.addEventListener('click', () => setMode('p-to-z'));
 
