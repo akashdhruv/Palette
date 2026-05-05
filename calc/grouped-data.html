@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Grouped Data Calculator</title>
+<link rel="stylesheet" href="../css/shared.css">
 <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
 <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
@@ -11,61 +12,12 @@
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
   onload="renderMathInElement(document.getElementById('formula-bar'), {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #1a1a2e;
-    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-    color: #e8e8ff;
     height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
-  #loading-screen {
-    position: fixed; inset: 0;
-    background: #1a1a2e;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    transition: opacity 0.5s;
-  }
-  #loading-screen.hidden { opacity: 0; pointer-events: none; }
-  .loader {
-    width: 48px; height: 48px;
-    border: 4px solid #333366;
-    border-top-color: #9999cc;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  #loading-screen p {
-    margin-top: 18px;
-    color: #8888bb;
-    font-size: 15px;
-  }
-  #loading-screen .sub {
-    margin-top: 6px;
-    color: #555588;
-    font-size: 12px;
-  }
-  #loading-progress {
-    margin-top: 14px;
-    width: 220px;
-    height: 4px;
-    background: #2a2a4e;
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  #loading-progress-bar {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, #5555bb, #9999cc);
-    border-radius: 2px;
-    transition: width 0.4s ease;
-  }
-
   #main-container {
     flex: 1;
     display: flex;
@@ -153,20 +105,12 @@
     text-align: center;
   }
   td input {
-    background: #16213e;
-    color: #e8e8ff;
-    border: 1px solid #333366;
     border-radius: 3px;
     padding: 5px 4px;
     font-size: 15px;
-    font-family: inherit;
-    outline: none;
     width: 100%;
     text-align: center;
-    caret-color: #aaaaff;
   }
-  td input:focus { border-color: #5555bb; }
-  td input::placeholder { color: #555588; }
   td.computed {
     color: #66eebb;
     font-size: 15px;
@@ -836,5 +780,6 @@ for _ in range(4):
 render_table()
 </script>
 
+<script src="../js/nav.js"></script>
 </body>
 </html>

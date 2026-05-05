@@ -4,17 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Normal Distribution Calculator</title>
+<link rel="stylesheet" href="../css/shared.css">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #1a1a2e;
-    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-    color: #e8e8ff;
     height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
+  #palette-nav + #graph-container { margin-top: 0; }
   #graph-container {
     flex: 1;
     display: flex;
@@ -48,19 +46,8 @@
     min-width: fit-content;
   }
   .control-group input {
-    background: #16213e;
-    color: #e8e8ff;
-    border: 1px solid #333366;
-    border-radius: 5px;
-    padding: 6px 10px;
-    font-size: 16px;
-    font-family: inherit;
-    outline: none;
     width: 90px;
-    caret-color: #aaaaff;
   }
-  .control-group input:focus { border-color: #5555bb; }
-  .control-group input::placeholder { color: #555588; }
   #mode-toggle {
     display: flex;
     gap: 0;
@@ -156,6 +143,11 @@
   function normalPDF(x, mu, sigma) {
     const z = (x - mu) / sigma;
     return Math.exp(-0.5 * z * z) / (sigma * Math.sqrt(2 * Math.PI));
+  }
+
+  // Standard normal PDF (for plotting — always peaks at ~0.399)
+  function stdNormalPDF(z) {
+    return Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
   }
 
   // Cumulative distribution function using error function approximation
@@ -275,10 +267,10 @@
     // Graph bounds: show mu +/- 4*sigma
     const xMin = mu - 4 * sigma;
     const xMax = mu + 4 * sigma;
-    const yMax = normalPDF(mu, mu, sigma) * 1.15;
+    const yMax = stdNormalPDF(0) * 1.15;
     const yMin = -yMax * 0.08;
 
-    const pad = { left: 50, right: 20, top: 20, bottom: 48 };
+    const pad = { left: 60, right: 30, top: 24, bottom: 56 };
     const plotW = cw - pad.left - pad.right;
     const plotH = ch - pad.top - pad.bottom;
 
@@ -319,7 +311,7 @@
       ctx.moveTo(toCanvasX(shadeFrom), baseY);
       for (let i = 0; i <= steps; i++) {
         const x = shadeFrom + (shadeTo - shadeFrom) * i / steps;
-        ctx.lineTo(toCanvasX(x), toCanvasY(normalPDF(x, mu, sigma)));
+        ctx.lineTo(toCanvasX(x), toCanvasY(stdNormalPDF((x - mu) / sigma)));
       }
       ctx.lineTo(toCanvasX(shadeTo), baseY);
       ctx.closePath();
@@ -330,7 +322,7 @@
       ctx.moveTo(toCanvasX(xMin), baseY);
       for (let i = 0; i <= steps; i++) {
         const x = xMin + (shadeTo - xMin) * i / steps;
-        ctx.lineTo(toCanvasX(x), toCanvasY(normalPDF(x, mu, sigma)));
+        ctx.lineTo(toCanvasX(x), toCanvasY(stdNormalPDF((x - mu) / sigma)));
       }
       ctx.lineTo(toCanvasX(shadeTo), baseY);
       ctx.closePath();
@@ -343,7 +335,7 @@
     ctx.beginPath();
     for (let i = 0; i <= 1000; i++) {
       const x = xMin + (xMax - xMin) * i / 1000;
-      const y = normalPDF(x, mu, sigma);
+      const y = stdNormalPDF((x - mu) / sigma);
       const cx = toCanvasX(x);
       const cy = toCanvasY(y);
       if (i === 0) ctx.moveTo(cx, cy);
@@ -358,16 +350,16 @@
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 4]);
         const mx = toCanvasX(xPos);
-        const markerTop = toCanvasY(normalPDF(xPos, mu, sigma));
+        const markerTop = toCanvasY(stdNormalPDF((xPos - mu) / sigma));
         ctx.beginPath(); ctx.moveTo(mx, baseY); ctx.lineTo(mx, markerTop); ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = '#16213e';
-        ctx.font = '12px monospace';
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 14px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`z=${zLabel}`, mx, baseY + 14);
-        ctx.fillStyle = '#3498db';
-        ctx.font = '11px monospace';
-        ctx.fillText(`x=${xPos.toFixed(2)}`, mx, markerTop - 6);
+        ctx.fillText(`z=${zLabel}`, mx, baseY + 18);
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 13px monospace';
+        ctx.fillText(`x=${xPos.toFixed(2)}`, mx, markerTop - 10);
       }
     }
     if (mode === 'range') {
@@ -377,21 +369,19 @@
       drawMarker(xMark, zVal.toFixed(2));
     }
 
-    // X-axis labels (z-scores and x values)
-    ctx.font = '11px monospace';
+    // X-axis labels (z-scores only)
+    ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
     for (let i = -4; i <= 4; i++) {
       const x = mu + i * sigma;
       const cx = toCanvasX(x);
-      ctx.fillStyle = '#333';
-      ctx.fillText(i === 0 ? '0' : `${i}σ`, cx, baseY + 28);
-      ctx.fillStyle = '#3498db';
-      ctx.font = '10px monospace';
-      ctx.fillText(x % 1 === 0 ? x.toFixed(0) : x.toFixed(2), cx, baseY + 40);
-      ctx.font = '11px monospace';
+      ctx.fillStyle = '#ccccee';
+      ctx.fillText(i === 0 ? '0' : `${i}σ`, cx, baseY + 36);
     }
 
     // Y-axis labels
+    ctx.font = 'bold 12px monospace';
+    ctx.fillStyle = '#ccccee';
     ctx.textAlign = 'right';
     for (let y = 0; y <= yMax * 0.95; y += yStep) {
       const cy = toCanvasY(y);
@@ -434,7 +424,7 @@
     } else if (mode === 'x-to-zp') {
       btnXtoZP.classList.add('active');
       inputLabel.textContent = 'X:';
-      valueInput.value = mu.toString();
+      valueInput.value = meanInput.value;
       valueInput.step = '0.1';
       statusBar.innerHTML = 'X &rarr; Z, P — enter an x value to find its z-score and probability';
     } else if (mode === 'range') {
@@ -473,5 +463,6 @@
 })();
 </script>
 
+<script src="../js/nav.js"></script>
 </body>
 </html>
