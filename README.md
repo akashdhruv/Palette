@@ -24,16 +24,17 @@ The graph updates in real time as inputs change, so students can build intuition
 
 **Useful for:** introducing the normal distribution, replacing printed z-tables, checking homework answers, exam review.
 
-### Grouped Data Calculator (`calc/grouped-data.html`)
-Students enter class intervals and frequencies into a table. The calculator fills in midpoints, cumulative frequencies, and f*x products automatically, then computes:
+### Frequency Distribution Calculator (`calc/frequency-distribution.html`)
+Students choose between two modes -- **Grouped Data** (class intervals) or **Single Value (x)** (ungrouped) -- and enter frequencies into a table. The calculator fills in midpoints, cumulative frequencies, f*x, x², and f*x² automatically, then computes:
 
-- **Mean** (weighted by midpoints)
-- **Median** (interpolation formula, with the median class identified)
-- **Mode** (interpolation formula, with the modal class highlighted)
+- **Mean** (weighted by midpoints or x values)
+- **Variance** and **Standard Deviation**
+- **Median** (interpolation formula for grouped data; positional for single-value data)
+- **Mode** (interpolation formula for grouped data; highest frequency for single-value data)
 
-A histogram with overlaid mean/median/mode lines and a cumulative frequency curve appears alongside the results. An example dataset is built in so students can see how it works before entering their own data.
+A histogram with overlaid mean/median/mode lines and a cumulative frequency curve appears alongside the results. An example dataset is built in for each mode so students can see how it works before entering their own data.
 
-**Useful for:** grouped frequency distributions, measures of central tendency for grouped data, ogive curves.
+**Useful for:** grouped and ungrouped frequency distributions, measures of central tendency and dispersion, ogive curves.
 
 ## How to use
 

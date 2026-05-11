@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Frequency Distribution Calculator</title>
+<link rel="stylesheet" href="../css/shared.css">
+<link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
+<script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.getElementById('formula-bar'), {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<style>
+  body {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #main-container {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* Left panel: inputs */
+  #input-panel {
+    width: 500px;
+    min-width: 440px;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #333366;
+    overflow-y: auto;
+  }
+
+  #header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid #2a2a4e;
+  }
+  #header-row h2 {
+    font-size: 16px;
+    color: #9999cc;
+    font-weight: bold;
+  }
+  #header-row .btn-group {
+    display: flex;
+    gap: 5px;
+  }
+  #header-row .btn-group button {
+    background: #16213e;
+    color: #9999cc;
+    border: 1px solid #333366;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #header-row .btn-group button:hover {
+    background: #5555bb;
+    color: #fff;
+    border-color: #5555bb;
+  }
+  #header-row .btn-group #btn-compute {
+    background: #27ae60;
+    color: #fff;
+    border-color: #27ae60;
+    font-weight: bold;
+  }
+  #header-row .btn-group #btn-compute:hover {
+    background: #2ecc71;
+    border-color: #2ecc71;
+  }
+
+  /* Mode toggle row */
+  #mode-row {
+    padding: 8px 10px;
+    border-bottom: 1px solid #2a2a4e;
+  }
+  .mode-toggle {
+    display: flex;
+    width: 100%;
+    background: #16213e;
+    border: 1px solid #333366;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .mode-btn {
+    flex: 1;
+    background: transparent;
+    color: #9999cc;
+    border: none;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .mode-btn.active {
+    background: #5555bb;
+    color: #fff;
+    font-weight: bold;
+  }
+  .mode-btn:hover:not(.active) {
+    background: #1f2a4a;
+    color: #ccccff;
+  }
+
+  #data-table-container {
+    overflow: auto;
+    padding: 8px 10px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+  }
+  th {
+    background: #16213e;
+    color: #9999cc;
+    padding: 6px 4px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 14px;
+    border: 1px solid #333366;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  td {
+    padding: 2px;
+    border: 1px solid #2a2a4e;
+    text-align: center;
+  }
+  td input {
+    border-radius: 3px;
+    padding: 5px 4px;
+    font-size: 15px;
+    width: 100%;
+    min-width: 60px;
+    text-align: center;
+    box-sizing: border-box;
+  }
+  /* Hide number input spin arrows */
+  td input[type=number]::-webkit-outer-spin-button,
+  td input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  td input[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  td.computed {
+    color: #66eebb;
+    font-size: 15px;
+    background: #16213e;
+    padding: 5px 4px;
+    min-width: 55px;
+  }
+  td .del-btn {
+    background: none;
+    border: none;
+    color: #e74c3c;
+    font-size: 16px;
+    cursor: pointer;
+    opacity: 0.6;
+    font-family: inherit;
+  }
+  td .del-btn:hover { opacity: 1; }
+
+  /* Right panel: results + chart */
+  #output-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  #results-bar {
+    padding: 10px 16px;
+    border-top: 1px solid #333366;
+    min-height: 40px;
+    overflow-y: auto;
+  }
+  .result-sub {
+    color: #8888bb;
+    font-size: 14px;
+  }
+  #results-bar table.stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+  }
+  #results-bar table.stats-table th {
+    background: #16213e;
+    color: #9999cc;
+    padding: 6px 10px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: bold;
+    border: 1px solid #333366;
+  }
+  #results-bar table.stats-table td {
+    padding: 6px 10px;
+    text-align: center;
+    border: 1px solid #2a2a4e;
+    color: #66eebb;
+    font-weight: bold;
+    font-size: 16px;
+    background: #16213e;
+  }
+  #results-bar table.stats-table td.sub-val {
+    color: #8888bb;
+    font-size: 13px;
+    font-weight: normal;
+  }
+
+  #chart-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    min-height: 0;
+  }
+  #chart-container img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 6px;
+  }
+
+  #formula-bar {
+    flex: 1;
+    padding: 16px 18px;
+    color: #9999cc;
+    border-top: 1px solid #2a2a4e;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+  }
+  #formula-bar .katex { color: #ccccff; }
+  #formula-bar .formula-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 15px;
+  }
+  #formula-bar .formula-row .katex { font-size: 1.25em; }
+  #formula-bar .formula-label {
+    color: #8888bb;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    min-width: 70px;
+  }
+  #formula-bar .formula-text {
+    color: #ccccff;
+    font-size: 14px;
+  }
+  #formulas-grouped, #formulas-ungrouped {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* Mobile responsive */
+  @media (max-width: 700px) {
+    #main-container {
+      flex-direction: column;
+    }
+    #input-panel {
+      width: 100%;
+      min-width: unset;
+      max-height: 50vh;
+      border-right: none;
+      border-bottom: 1px solid #333366;
+    }
+  }
+</style>
+<py-config>
+  packages = ["numpy", "matplotlib"]
+</py-config>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="loader"></div>
+  <p>Loading Frequency Distribution Calculator...</p>
+  <p class="sub">Downloading Python + NumPy + Matplotlib (first load only)</p>
+  <div id="loading-progress"><div id="loading-progress-bar"></div></div>
+</div>
+
+<script>
+(function() {
+  const bar = document.getElementById('loading-progress-bar');
+  let pct = 0;
+  const timer = setInterval(function() {
+    if (document.getElementById('loading-screen').classList.contains('hidden')) {
+      clearInterval(timer);
+      return;
+    }
+    if (pct < 90) {
+      pct += 2;
+      bar.style.width = pct + '%';
+    }
+  }, 800);
+})();
+</script>
+
+<div id="main-container">
+  <div id="input-panel">
+    <div id="header-row">
+      <h2 id="title-text">Grouped Frequency Distribution</h2>
+      <div class="btn-group">
+        <button id="btn-add">+ Row</button>
+        <button id="btn-clear">Clear</button>
+        <button id="btn-example">Example</button>
+        <button id="btn-compute">Compute</button>
+      </div>
+    </div>
+    <div id="mode-row">
+      <div class="mode-toggle">
+        <button id="btn-mode-grouped" class="mode-btn active">Grouped Data</button>
+        <button id="btn-mode-ungrouped" class="mode-btn">Single Value (x)</button>
+      </div>
+    </div>
+    <div id="data-table-container">
+      <table>
+        <thead id="data-head"></thead>
+        <tbody id="data-body"></tbody>
+      </table>
+    </div>
+    <div id="formula-bar">
+      <div id="formulas-grouped">
+        <div class="formula-row"><span class="formula-label">Mean</span> $\bar{x} = \dfrac{\sum fx}{N}$</div>
+        <div class="formula-row"><span class="formula-label">Variance</span> $\sigma^2 = \dfrac{\sum fx^2}{N} - \bar{x}^2$</div>
+        <div class="formula-row"><span class="formula-label">Std Dev</span> $\sigma = \sqrt{\sigma^2}$</div>
+        <div class="formula-row"><span class="formula-label">Median</span> $\text{Median} = L + \dfrac{\frac{N}{2} - CF}{f} \cdot h$</div>
+        <div class="formula-row"><span class="formula-label">Mode</span> $\text{Mode} = L + \dfrac{f_1 - f_0}{2f_1 - f_0 - f_2} \cdot h$</div>
+      </div>
+      <div id="formulas-ungrouped" style="display:none;">
+        <div class="formula-row"><span class="formula-label">Mean</span> $\bar{x} = \dfrac{\sum fx}{N}$</div>
+        <div class="formula-row"><span class="formula-label">Variance</span> $\sigma^2 = \dfrac{\sum fx^2}{N} - \bar{x}^2$</div>
+        <div class="formula-row"><span class="formula-label">Std Dev</span> $\sigma = \sqrt{\sigma^2}$</div>
+        <div class="formula-row"><span class="formula-label">Median</span> <span class="formula-text">Middle value when data sorted by x (avg of two middles if N is even)</span></div>
+        <div class="formula-row"><span class="formula-label">Mode</span> <span class="formula-text">Value(s) of x with the highest frequency</span></div>
+      </div>
+    </div>
+  </div>
+  <div id="output-panel">
+    <div id="chart-container">
+      <div style="color:#555588; font-size:14px;">Chart will appear here</div>
+    </div>
+    <div id="results-bar">
+      <span class="result-sub">Enter values, then press Compute</span>
+    </div>
+
+
+  </div>
+</div>
+
+<script type="py" async>
+import io
+import base64
+import numpy as np
+from matplotlib.figure import Figure
+from pyodide.ffi import create_proxy
+from js import document, window
+
+# ── State ────────────────────────────────────────────────────────────────────
+
+mode = 'grouped'  # 'grouped' | 'ungrouped'
+rows_grouped = []   # [{'lower', 'upper', 'freq'}]
+rows_ungrouped = [] # [{'x', 'freq'}]
+
+GROUPED_HEADERS = ['Lower', 'Upper', 'Freq (f)', 'Midpt (x)', 'CF', 'f*x', 'x²', 'f*x²', '']
+UNGROUPED_HEADERS = ['x', 'Freq (f)', 'CF', 'f*x', 'x²', 'f*x²', '']
+
+def current_rows():
+    return rows_grouped if mode == 'grouped' else rows_ungrouped
+
+# ── Mode switching ───────────────────────────────────────────────────────────
+
+def set_mode(new_mode):
+    global mode
+    if new_mode == mode:
+        return
+    sync_inputs()
+    mode = new_mode
+    document.getElementById('btn-mode-grouped').classList.toggle('active', mode == 'grouped')
+    document.getElementById('btn-mode-ungrouped').classList.toggle('active', mode == 'ungrouped')
+    document.getElementById('title-text').textContent = (
+        'Grouped Frequency Distribution' if mode == 'grouped' else 'Single Value (x) Distribution'
+    )
+    document.getElementById('formulas-grouped').style.display = '' if mode == 'grouped' else 'none'
+    document.getElementById('formulas-ungrouped').style.display = '' if mode == 'ungrouped' else 'none'
+    if not current_rows():
+        for _ in range(4):
+            if mode == 'grouped':
+                rows_grouped.append({'lower': '', 'upper': '', 'freq': ''})
+            else:
+                rows_ungrouped.append({'x': '', 'freq': ''})
+    document.getElementById('results-bar').innerHTML = '<span class="result-sub">Enter values, then press Compute</span>'
+    document.getElementById('chart-container').innerHTML = '<div style="color:#555588; font-size:14px;">Chart will appear here</div>'
+    render_table()
+
+# ── Row operations ───────────────────────────────────────────────────────────
+
+def add_row(lower='', upper='', freq='', x=''):
+    if mode == 'grouped':
+        rows_grouped.append({'lower': lower, 'upper': upper, 'freq': freq})
+    else:
+        rows_ungrouped.append({'x': x, 'freq': freq})
+    render_table()
+
+def remove_row(idx):
+    rows = current_rows()
+    if len(rows) > 1:
+        rows.pop(idx)
+        render_table()
+
+def clear_all():
+    rows = current_rows()
+    rows.clear()
+    for _ in range(4):
+        if mode == 'grouped':
+            rows.append({'lower': '', 'upper': '', 'freq': ''})
+        else:
+            rows.append({'x': '', 'freq': ''})
+    render_table()
+    document.getElementById('results-bar').innerHTML = '<span class="result-sub">Enter values, then press Compute</span>'
+    document.getElementById('chart-container').innerHTML = '<div style="color:#555588; font-size:14px;">Chart will appear here</div>'
+
+def load_example():
+    if mode == 'grouped':
+        rows_grouped.clear()
+        rows_grouped.append({'lower': '14', 'upper': '18', 'freq': '5'})
+        rows_grouped.append({'lower': '19', 'upper': '23', 'freq': '9'})
+        rows_grouped.append({'lower': '24', 'upper': '28', 'freq': '6'})
+        rows_grouped.append({'lower': '29', 'upper': '33', 'freq': '10'})
+    else:
+        rows_ungrouped.clear()
+        rows_ungrouped.append({'x': '5',  'freq': '2'})
+        rows_ungrouped.append({'x': '10', 'freq': '4'})
+        rows_ungrouped.append({'x': '15', 'freq': '6'})
+        rows_ungrouped.append({'x': '20', 'freq': '3'})
+        rows_ungrouped.append({'x': '25', 'freq': '1'})
+    render_table()
+    compute()
+
+# ── Table rendering ──────────────────────────────────────────────────────────
+
+def sync_inputs():
+    body = document.getElementById('data-body')
+    trs = body.querySelectorAll('tr')
+    rows = current_rows()
+    for i in range(min(len(rows), trs.length)):
+        inputs = trs[i].querySelectorAll('input')
+        if mode == 'grouped':
+            if inputs.length >= 3:
+                rows[i]['lower'] = inputs[0].value
+                rows[i]['upper'] = inputs[1].value
+                rows[i]['freq']  = inputs[2].value
+        else:
+            if inputs.length >= 2:
+                rows[i]['x']    = inputs[0].value
+                rows[i]['freq'] = inputs[1].value
+
+def make_input_cell(value, idx, field):
+    td = document.createElement('td')
+    inp = document.createElement('input')
+    inp.type = 'number'
+    inp.placeholder = '0'
+    inp.value = value
+    inp.setAttribute('data-idx', str(idx))
+    inp.setAttribute('data-field', field)
+    td.appendChild(inp)
+    return td
+
+def make_computed_cell(cell_id):
+    td = document.createElement('td')
+    td.className = 'computed'
+    td.id = cell_id
+    td.textContent = '-'
+    return td
+
+def render_thead():
+    head = document.getElementById('data-head')
+    head.innerHTML = ''
+    tr = document.createElement('tr')
+    headers = GROUPED_HEADERS if mode == 'grouped' else UNGROUPED_HEADERS
+    for h in headers:
+        th = document.createElement('th')
+        th.textContent = h
+        tr.appendChild(th)
+    head.appendChild(tr)
+
+def render_table():
+    render_thead()
+    body = document.getElementById('data-body')
+    body.innerHTML = ''
+    rows = current_rows()
+    for i, row in enumerate(rows):
+        tr = document.createElement('tr')
+        if mode == 'grouped':
+            tr.appendChild(make_input_cell(row['lower'], i, 'lower'))
+            tr.appendChild(make_input_cell(row['upper'], i, 'upper'))
+            tr.appendChild(make_input_cell(row['freq'],  i, 'freq'))
+            tr.appendChild(make_computed_cell(f'mid-{i}'))
+            tr.appendChild(make_computed_cell(f'cf-{i}'))
+            tr.appendChild(make_computed_cell(f'fx-{i}'))
+            tr.appendChild(make_computed_cell(f'x2-{i}'))
+            tr.appendChild(make_computed_cell(f'fx2-{i}'))
+        else:
+            tr.appendChild(make_input_cell(row['x'],    i, 'x'))
+            tr.appendChild(make_input_cell(row['freq'], i, 'freq'))
+            tr.appendChild(make_computed_cell(f'cf-{i}'))
+            tr.appendChild(make_computed_cell(f'fx-{i}'))
+            tr.appendChild(make_computed_cell(f'x2-{i}'))
+            tr.appendChild(make_computed_cell(f'fx2-{i}'))
+        td = document.createElement('td')
+        btn = document.createElement('button')
+        btn.className = 'del-btn'
+        btn.textContent = '×'
+        btn.setAttribute('data-delidx', str(i))
+        td.appendChild(btn)
+        tr.appendChild(td)
+        body.appendChild(tr)
+
+def set_cell(cell_id, text):
+    el = document.getElementById(cell_id)
+    if el:
+        el.textContent = text
+
+def fmt(v):
+    """Format number cleanly: integer if whole, else 2 decimals."""
+    if v == int(v):
+        return f'{int(v)}'
+    return f'{v:.2f}'
+
+# ── Parsing ──────────────────────────────────────────────────────────────────
+
+def parse_grouped_data():
+    """Returns list of (idx, lo, hi, f) for valid rows."""
+    sync_inputs()
+    classes = []
+    for idx, row in enumerate(rows_grouped):
+        try:
+            lo = float(row['lower'])
+            hi = float(row['upper'])
+            f = float(row['freq'])
+            if hi <= lo or f < 0:
+                continue
+            classes.append((idx, lo, hi, f))
+        except (ValueError, TypeError):
+            continue
+    return classes
+
+def parse_ungrouped_data():
+    """Returns list of (idx, x, f) for valid rows."""
+    sync_inputs()
+    pairs = []
+    for idx, row in enumerate(rows_ungrouped):
+        try:
+            x = float(row['x'])
+            f = float(row['freq'])
+            if f < 0:
+                continue
+            pairs.append((idx, x, f))
+        except (ValueError, TypeError):
+            continue
+    return pairs
+
+# ── Computation ──────────────────────────────────────────────────────────────
+
+def compute():
+    if mode == 'grouped':
+        compute_grouped()
+    else:
+        compute_ungrouped()
+
+def compute_grouped():
+    classes = parse_grouped_data()
+    if not classes:
+        document.getElementById('results-bar').innerHTML = '<span class="result-sub" style="color:#e74c3c;">Please enter valid class intervals and frequencies</span>'
+        return
+
+    indices = [c[0] for c in classes]
+    lowers  = [c[1] for c in classes]
+    uppers  = [c[2] for c in classes]
+    freqs   = [c[3] for c in classes]
+
+    midpoints  = [(lo + hi) / 2 for lo, hi in zip(lowers, uppers)]
+    fx         = [f * x for f, x in zip(freqs, midpoints)]
+    N          = sum(freqs)
+    cf = []
+    running = 0
+    for f in freqs:
+        running += f
+        cf.append(running)
+    x_squared  = [x ** 2 for x in midpoints]
+    fx_squared = [f * x2 for f, x2 in zip(freqs, x_squared)]
+
+    # Reset all computed cells, then fill the valid ones
+    for i in range(len(rows_grouped)):
+        set_cell(f'mid-{i}', '-')
+        set_cell(f'cf-{i}',  '-')
+        set_cell(f'fx-{i}',  '-')
+        set_cell(f'x2-{i}',  '-')
+        set_cell(f'fx2-{i}', '-')
+    for j, idx in enumerate(indices):
+        set_cell(f'mid-{idx}', f'{midpoints[j]:.1f}')
+        set_cell(f'cf-{idx}',  f'{cf[j]:.0f}')
+        set_cell(f'fx-{idx}',  f'{fx[j]:.1f}')
+        set_cell(f'x2-{idx}',  f'{x_squared[j]:.2f}')
+        set_cell(f'fx2-{idx}', f'{fx_squared[j]:.2f}')
+
+    # Mean / variance / std dev
+    mean_val = sum(fx) / N
+    sum_fx2  = sum(fx_squared)
+    variance = sum_fx2 / N - mean_val ** 2
+    std_dev  = variance ** 0.5
+
+    # Median (grouped)
+    half_n = N / 2
+    median_class_idx = 0
+    for i, c in enumerate(cf):
+        if c >= half_n:
+            median_class_idx = i
+            break
+    L_med    = lowers[median_class_idx]
+    h_med    = uppers[median_class_idx] - lowers[median_class_idx]
+    f_med    = freqs[median_class_idx]
+    cf_before = cf[median_class_idx - 1] if median_class_idx > 0 else 0
+    median_val = L_med + ((half_n - cf_before) / f_med) * h_med
+
+    # Mode (grouped)
+    max_freq = max(freqs)
+    mode_class_idx = freqs.index(max_freq)
+    mode_count = freqs.count(max_freq)
+
+    if mode_count == len(freqs) and len(freqs) > 1:
+        mode_val = None
+        mode_text = "No mode"
+    elif mode_count > 1:
+        modal_midpoints = [midpoints[i] for i, f in enumerate(freqs) if f == max_freq]
+        mode_val = modal_midpoints
+        mode_text = ', '.join(f'{m:.2f}' for m in modal_midpoints)
+    else:
+        L_mode = lowers[mode_class_idx]
+        h_mode = uppers[mode_class_idx] - lowers[mode_class_idx]
+        f1 = freqs[mode_class_idx]
+        f0 = freqs[mode_class_idx - 1] if mode_class_idx > 0 else 0
+        f2 = freqs[mode_class_idx + 1] if mode_class_idx < len(freqs) - 1 else 0
+        denom = (2 * f1 - f0 - f2)
+        if denom == 0:
+            mode_val = midpoints[mode_class_idx]
+        else:
+            mode_val = L_mode + ((f1 - f0) / denom) * h_mode
+        mode_text = f'{mode_val:.4f}'
+
+    median_sub = f'Class: {fmt(lowers[median_class_idx])}-{fmt(uppers[median_class_idx])}'
+    mode_sub   = f'Class: {fmt(lowers[mode_class_idx])}-{fmt(uppers[mode_class_idx])}, f={max_freq:.0f}'
+
+    show_results(N, sum(fx), sum_fx2, mean_val, variance, std_dev,
+                 f'{median_val:.4f}', mode_text, median_sub, mode_sub)
+    draw_chart_grouped(lowers, uppers, midpoints, freqs, cf, N, mean_val, median_val, mode_val)
+
+def compute_ungrouped():
+    pairs = parse_ungrouped_data()
+    if not pairs:
+        document.getElementById('results-bar').innerHTML = '<span class="result-sub" style="color:#e74c3c;">Please enter valid x values and frequencies</span>'
+        return
+
+    # Compute display CF in user's row order
+    display = []
+    running = 0
+    for idx, x, f in pairs:
+        running += f
+        display.append((idx, x, f, running))
+
+    # Reset and update computed cells (all rows incl. invalid ones)
+    for i in range(len(rows_ungrouped)):
+        set_cell(f'cf-{i}',  '-')
+        set_cell(f'fx-{i}',  '-')
+        set_cell(f'x2-{i}',  '-')
+        set_cell(f'fx2-{i}', '-')
+    for idx, x, f, c in display:
+        set_cell(f'cf-{idx}',  f'{c:.0f}')
+        set_cell(f'fx-{idx}',  fmt(f * x))
+        set_cell(f'x2-{idx}',  fmt(x ** 2))
+        set_cell(f'fx2-{idx}', fmt(f * x ** 2))
+
+    # Sort by x for stats
+    sorted_pairs = sorted(((x, f) for _, x, f in pairs), key=lambda p: p[0])
+    x_vals = [p[0] for p in sorted_pairs]
+    freqs  = [p[1] for p in sorted_pairs]
+    N = sum(freqs)
+    if N <= 0:
+        document.getElementById('results-bar').innerHTML = '<span class="result-sub" style="color:#e74c3c;">Total frequency must be > 0</span>'
+        return
+
+    fx_total  = sum(x * f for x, f in zip(x_vals, freqs))
+    fx2_total = sum(x ** 2 * f for x, f in zip(x_vals, freqs))
+    mean_val  = fx_total / N
+    variance  = fx2_total / N - mean_val ** 2
+    std_dev   = variance ** 0.5
+
+    # CF on sorted data, used for median lookup
+    cf_sorted = []
+    running = 0
+    for f in freqs:
+        running += f
+        cf_sorted.append(running)
+
+    # Median
+    if N % 2 == 1:
+        target = (N + 1) / 2
+        median_val = x_vals[-1]
+        for i, c in enumerate(cf_sorted):
+            if c >= target:
+                median_val = x_vals[i]
+                break
+    else:
+        t1 = N / 2
+        t2 = N / 2 + 1
+        v1 = v2 = None
+        for i, c in enumerate(cf_sorted):
+            if v1 is None and c >= t1:
+                v1 = x_vals[i]
+            if v2 is None and c >= t2:
+                v2 = x_vals[i]
+                break
+        median_val = (v1 + v2) / 2
+
+    # Mode
+    max_freq = max(freqs)
+    mode_count = freqs.count(max_freq)
+    if mode_count == len(freqs) and len(freqs) > 1:
+        mode_val = None
+        mode_text = "No mode"
+    elif mode_count > 1:
+        modal_xs = [x_vals[i] for i, f in enumerate(freqs) if f == max_freq]
+        mode_val = modal_xs
+        mode_text = ', '.join(fmt(m) for m in modal_xs)
+    else:
+        mode_idx = freqs.index(max_freq)
+        mode_val = x_vals[mode_idx]
+        mode_text = fmt(mode_val)
+
+    median_sub = f'Position N/2 = {fmt(N/2)}'
+    mode_sub   = f'Highest f = {max_freq:.0f}'
+
+    show_results(N, fx_total, fx2_total, mean_val, variance, std_dev,
+                 fmt(median_val), mode_text, median_sub, mode_sub)
+    draw_chart_ungrouped(x_vals, freqs, cf_sorted, N, mean_val, median_val, mode_val)
+
+def show_results(N, sum_fx, sum_fx2, mean_val, variance, std_dev,
+                 median_text, mode_text, median_sub, mode_sub):
+    results_html = f'''
+        <table class="stats-table">
+            <tr>
+                <th>N</th>
+                <th>Sum(f*x)</th>
+                <th>Sum(f*x²)</th>
+                <th>Mean</th>
+                <th>Variance (σ²)</th>
+                <th>Std Dev (σ)</th>
+                <th>Median</th>
+                <th>Mode</th>
+            </tr>
+            <tr>
+                <td>{N:.0f}</td>
+                <td>{sum_fx:.2f}</td>
+                <td>{sum_fx2:.2f}</td>
+                <td>{mean_val:.4f}</td>
+                <td>{variance:.4f}</td>
+                <td>{std_dev:.4f}</td>
+                <td>{median_text}</td>
+                <td>{mode_text}</td>
+            </tr>
+            <tr>
+                <td class="sub-val">Total freq</td>
+                <td class="sub-val">Σfx</td>
+                <td class="sub-val">Σfx²</td>
+                <td class="sub-val">Σfx/N</td>
+                <td class="sub-val">Σfx²/N − x̄²</td>
+                <td class="sub-val">√variance</td>
+                <td class="sub-val">{median_sub}</td>
+                <td class="sub-val">{mode_sub}</td>
+            </tr>
+        </table>
+    '''
+    document.getElementById('results-bar').innerHTML = results_html
+
+# ── Charts ───────────────────────────────────────────────────────────────────
+
+def _new_figure():
+    container = document.getElementById('chart-container')
+    cw = container.clientWidth - 12
+    ch = container.clientHeight - 12
+    if cw < 200: cw = 600
+    if ch < 150: ch = 350
+    dpr = window.devicePixelRatio or 1
+    dpi = 100
+    fig = Figure(figsize=(cw / dpi, ch / dpi), dpi=dpi)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor('#fafbfe')
+    fig.set_facecolor('#f0f2f8')
+    return fig, ax, container, cw, ch, dpi, dpr
+
+def _render_figure(fig, container, cw, ch, dpi, dpr):
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=dpi * dpr, facecolor=fig.get_facecolor())
+    buf.seek(0)
+    b64 = base64.b64encode(buf.read()).decode('ascii')
+    container.innerHTML = f'<img src="data:image/png;base64,{b64}" style="width:{cw}px;height:{ch}px;" draggable="false">'
+
+def draw_chart_grouped(lowers, uppers, midpoints, freqs, cf, N, mean_val, median_val, mode_val):
+    fig, ax, container, cw, ch, dpi, dpr = _new_figure()
+    widths = [u - l for l, u in zip(lowers, uppers)]
+    max_freq = max(freqs)
+
+    mode_class_idx = freqs.index(max_freq)
+    colors = ['#ffc000' if i == mode_class_idx else '#5b9bd5' for i in range(len(freqs))]
+
+    ax.bar(lowers, freqs, width=widths, align='edge', color=colors,
+           edgecolor='#444444', linewidth=1.0, alpha=0.88, zorder=3)
+
+    for lo, f, mid in zip(lowers, freqs, midpoints):
+        ax.text(mid, f + max_freq * 0.02, f'{f:.0f}',
+                ha='center', va='bottom', fontsize=10, fontweight='bold',
+                color='#333333', zorder=5)
+    for mid in midpoints:
+        ax.text(mid, -max_freq * 0.06, f'{mid:.1f}',
+                ha='center', va='top', fontsize=8, color='#555555', zorder=5)
+
+    ax.axvline(mean_val, color='#1a73e8', linewidth=2.5, linestyle='--',
+               label=f'Mean = {mean_val:.2f}', zorder=6)
+    ax.axvline(median_val, color='#9c27b0', linewidth=2.5, linestyle='-.',
+               label=f'Median = {median_val:.2f}', zorder=6)
+    if mode_val is not None:
+        if isinstance(mode_val, list):
+            for i, mv in enumerate(mode_val):
+                lbl = f'Mode = {mv:.2f}' if i == 0 else f'_mode{i}'
+                ax.axvline(mv, color='#d32f2f', linewidth=2.5, linestyle=':',
+                           label=lbl, zorder=6)
+        else:
+            ax.axvline(mode_val, color='#d32f2f', linewidth=2.5, linestyle=':',
+                       label=f'Mode = {mode_val:.2f}', zorder=6)
+
+    ax2 = ax.twinx()
+    ax2.plot(midpoints, cf, 'o-', color='#ff6f00', linewidth=2, markersize=6,
+             label='Cumul. Freq', zorder=7)
+    ax2.set_ylabel('Cumulative Frequency', color='#ff6f00', fontsize=10)
+    ax2.tick_params(axis='y', labelcolor='#ff6f00', labelsize=9)
+    ax2.set_facecolor('none')
+
+    ax.set_xlabel('Class Intervals', fontsize=11, color='#333333')
+    ax.set_ylabel('Frequency', fontsize=11, color='#333333')
+    ax.set_title('Grouped Frequency Distribution', fontsize=13, fontweight='bold',
+                 color='#333333', pad=10)
+
+    ax.grid(True, axis='y', color='#d0d4e0', linewidth=0.5, linestyle='-', zorder=0)
+    ax.set_ylim(bottom=-max_freq * 0.12, top=max_freq * 1.25)
+    ax2.set_ylim(bottom=0, top=N * 1.15)
+
+    boundaries = sorted(set(lowers + uppers))
+    ax.set_xticks(boundaries)
+    ax.tick_params(axis='both', labelsize=9)
+
+    for spine in ax.spines.values():
+        spine.set_color('#555555')
+        spine.set_linewidth(0.8)
+
+    ax.legend(loc='upper left', fontsize=9, framealpha=0.92,
+              facecolor='white', edgecolor='#bbbbbb')
+    fig.tight_layout(pad=0.8)
+    _render_figure(fig, container, cw, ch, dpi, dpr)
+
+def draw_chart_ungrouped(x_vals, freqs, cf, N, mean_val, median_val, mode_val):
+    fig, ax, container, cw, ch, dpi, dpr = _new_figure()
+    max_freq = max(freqs)
+
+    if len(x_vals) > 1:
+        diffs = [x_vals[i+1] - x_vals[i] for i in range(len(x_vals)-1)]
+        positive = [d for d in diffs if d > 0]
+        bar_width = (min(positive) * 0.6) if positive else 0.6
+    else:
+        bar_width = 0.6
+
+    mode_x_set = set()
+    if mode_val is not None:
+        if isinstance(mode_val, list):
+            mode_x_set = set(mode_val)
+        else:
+            mode_x_set = {mode_val}
+    colors = ['#ffc000' if x in mode_x_set else '#5b9bd5' for x in x_vals]
+
+    ax.bar(x_vals, freqs, width=bar_width, color=colors,
+           edgecolor='#444444', linewidth=1.0, alpha=0.88, zorder=3)
+
+    for x, f in zip(x_vals, freqs):
+        ax.text(x, f + max_freq * 0.02, f'{f:.0f}',
+                ha='center', va='bottom', fontsize=10, fontweight='bold',
+                color='#333333', zorder=5)
+
+    ax.axvline(mean_val, color='#1a73e8', linewidth=2.5, linestyle='--',
+               label=f'Mean = {mean_val:.2f}', zorder=6)
+    ax.axvline(median_val, color='#9c27b0', linewidth=2.5, linestyle='-.',
+               label=f'Median = {median_val:.2f}', zorder=6)
+    if mode_val is not None:
+        if isinstance(mode_val, list):
+            for i, mv in enumerate(mode_val):
+                lbl = f'Mode = {mv:g}' if i == 0 else f'_mode{i}'
+                ax.axvline(mv, color='#d32f2f', linewidth=2.5, linestyle=':',
+                           label=lbl, zorder=6)
+        else:
+            ax.axvline(mode_val, color='#d32f2f', linewidth=2.5, linestyle=':',
+                       label=f'Mode = {mode_val:g}', zorder=6)
+
+    ax2 = ax.twinx()
+    ax2.plot(x_vals, cf, 'o-', color='#ff6f00', linewidth=2, markersize=6,
+             label='Cumul. Freq', zorder=7)
+    ax2.set_ylabel('Cumulative Frequency', color='#ff6f00', fontsize=10)
+    ax2.tick_params(axis='y', labelcolor='#ff6f00', labelsize=9)
+    ax2.set_facecolor('none')
+
+    ax.set_xlabel('Value (x)', fontsize=11, color='#333333')
+    ax.set_ylabel('Frequency', fontsize=11, color='#333333')
+    ax.set_title('Single Value (x) Distribution', fontsize=13, fontweight='bold',
+                 color='#333333', pad=10)
+
+    ax.grid(True, axis='y', color='#d0d4e0', linewidth=0.5, linestyle='-', zorder=0)
+    ax.set_ylim(bottom=-max_freq * 0.12, top=max_freq * 1.25)
+    ax2.set_ylim(bottom=0, top=N * 1.15)
+    ax.set_xticks(x_vals)
+    ax.tick_params(axis='both', labelsize=9)
+
+    for spine in ax.spines.values():
+        spine.set_color('#555555')
+        spine.set_linewidth(0.8)
+
+    ax.legend(loc='upper left', fontsize=9, framealpha=0.92,
+              facecolor='white', edgecolor='#bbbbbb')
+    fig.tight_layout(pad=0.8)
+    _render_figure(fig, container, cw, ch, dpi, dpr)
+
+# ── Event handlers ───────────────────────────────────────────────────────────
+
+def on_add_click(event):
+    sync_inputs()
+    if mode == 'grouped':
+        last_upper = ''
+        if rows_grouped:
+            try:
+                lu = float(rows_grouped[-1]['upper'])
+                last_upper = str(int(lu + 1) if lu == int(lu) else round(lu + 1, 2))
+            except (ValueError, TypeError):
+                pass
+        add_row(lower=last_upper)
+    else:
+        add_row()
+
+def on_clear_click(event):
+    clear_all()
+
+def on_example_click(event):
+    load_example()
+
+def on_compute_click(event):
+    compute()
+
+def on_table_click(event):
+    target = event.target
+    if target.classList.contains('del-btn'):
+        idx = int(target.getAttribute('data-delidx'))
+        sync_inputs()
+        remove_row(idx)
+
+def on_keydown(event):
+    if event.key == 'Enter':
+        compute()
+
+def on_mode_grouped(event):
+    set_mode('grouped')
+
+def on_mode_ungrouped(event):
+    set_mode('ungrouped')
+
+# Bind events
+_add_proxy      = create_proxy(on_add_click)
+_clear_proxy    = create_proxy(on_clear_click)
+_example_proxy  = create_proxy(on_example_click)
+_compute_proxy  = create_proxy(on_compute_click)
+_table_click_proxy = create_proxy(on_table_click)
+_keydown_proxy  = create_proxy(on_keydown)
+_mode_g_proxy   = create_proxy(on_mode_grouped)
+_mode_u_proxy   = create_proxy(on_mode_ungrouped)
+
+document.getElementById('btn-add').addEventListener('click', _add_proxy)
+document.getElementById('btn-clear').addEventListener('click', _clear_proxy)
+document.getElementById('btn-example').addEventListener('click', _example_proxy)
+document.getElementById('btn-compute').addEventListener('click', _compute_proxy)
+document.getElementById('data-body').addEventListener('click', _table_click_proxy)
+document.getElementById('btn-mode-grouped').addEventListener('click', _mode_g_proxy)
+document.getElementById('btn-mode-ungrouped').addEventListener('click', _mode_u_proxy)
+document.addEventListener('keydown', _keydown_proxy)
+
+# Resize handler
+def on_resize(event=None):
+    if mode == 'grouped':
+        if parse_grouped_data():
+            compute()
+    else:
+        if parse_ungrouped_data():
+            compute()
+
+_resize_proxy = create_proxy(on_resize)
+window.addEventListener('resize', _resize_proxy)
+
+# Initialize
+document.getElementById('loading-screen').classList.add('hidden')
+for _ in range(4):
+    rows_grouped.append({'lower': '', 'upper': '', 'freq': ''})
+for _ in range(4):
+    rows_ungrouped.append({'x': '', 'freq': ''})
+render_table()
+</script>
+
+<script src="../js/nav.js"></script>
+</body>
+</html>
