@@ -48,11 +48,112 @@
     justify-content: center;
     padding: 6px;
     min-height: 0;
+    position: relative;
   }
   #graph-container img, #graph-container canvas {
     max-width: 100%;
     max-height: 100%;
     border-radius: 6px;
+  }
+  #graph-container img { cursor: crosshair; }
+  /* Analysis info panel overlay */
+  #info-panel {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    max-width: 320px;
+    min-width: 200px;
+    background: rgba(22, 33, 62, 0.96);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    padding: 10px 12px 12px;
+    font-size: 12px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    z-index: 5;
+    display: none;
+    pointer-events: auto;
+  }
+  #info-panel.visible { display: block; }
+  #info-panel .info-header {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  #info-panel .info-name {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 9px;
+    padding: 1px 7px;
+    font-size: 11px;
+  }
+  #info-panel .info-title {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: bold;
+    flex: 1;
+  }
+  #info-panel .info-close {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 4px;
+  }
+  #info-panel .info-close:hover { color: var(--text-primary); }
+  #info-panel .info-equation {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin: 4px 0 6px;
+    font-size: 14px;
+    color: #ccccff;
+    overflow-x: auto;
+  }
+  #info-panel .info-equation .eq-row {
+    margin: 2px 0;
+  }
+  #info-panel .info-equation .eq-label {
+    color: var(--text-dim);
+    font-size: 10px;
+    margin-right: 4px;
+  }
+  #info-panel .info-section-label {
+    color: var(--text-dim);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 6px 0 2px;
+  }
+  #info-panel .info-coeffs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 10px;
+  }
+  #info-panel .info-coeffs .coeff {
+    color: #ccccff;
+    font-size: 12px;
+  }
+  #info-panel .info-features .feature {
+    color: var(--text-primary);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  #info-panel .feature .marker-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+  .eq-pill.selected {
+    outline: 2px solid #ffffff;
+    outline-offset: 1px;
+    opacity: 1;
   }
   #preview-bar {
     min-height: 36px;
@@ -251,7 +352,21 @@
 })();
 </script>
 
-<div id="graph-container"><canvas id="graph-canvas" width="800" height="500"></canvas></div>
+<div id="graph-container">
+  <canvas id="graph-canvas" width="800" height="500"></canvas>
+  <div id="info-panel">
+    <div class="info-header">
+      <span class="info-name" id="info-name"></span>
+      <span class="info-title" id="info-title"></span>
+      <span class="info-close" id="info-close" title="Close">&times;</span>
+    </div>
+    <div class="info-equation" id="info-equation"></div>
+    <div class="info-section-label" id="info-coeffs-label">Coefficients</div>
+    <div class="info-coeffs" id="info-coeffs"></div>
+    <div class="info-section-label" id="info-features-label">Features</div>
+    <div class="info-features" id="info-features"></div>
+  </div>
+</div>
 <div id="eq-list"></div>
 <div id="preview-bar"></div>
 <div id="input-bar">
@@ -355,6 +470,51 @@ def _fc(v):
         return str(int(v))
     return f'{v:.3g}'
 
+def _fv(val):
+    """Compact LaTeX representation of a numeric/sympy value."""
+    if val is None:
+        return '?'
+    try:
+        if hasattr(val, 'is_number') and val.is_number:
+            if val.is_integer:
+                return str(int(val))
+            if val.is_rational:
+                return sp.latex(val)
+            f = float(val)
+        else:
+            f = float(val)
+    except Exception:
+        try:
+            return sp.latex(val)
+        except Exception:
+            return str(val)
+    if not math.isfinite(f):
+        return r'\infty' if f > 0 else r'-\infty'
+    if abs(f - round(f)) < 1e-10:
+        return str(int(round(f)))
+    return f'{f:.4g}'
+
+def _real_roots_of(expr, var):
+    """Return distinct real roots of expr in var as floats."""
+    out = []
+    try:
+        sols = sp.solve(expr, var)
+    except Exception:
+        return out
+    if isinstance(sols, dict):
+        sols = list(sols.values())
+    for s in sols:
+        try:
+            c = complex(s)
+        except Exception:
+            continue
+        if abs(c.imag) > 1e-8:
+            continue
+        val = float(c.real)
+        if not any(abs(val - x) < 1e-8 for x in out):
+            out.append(val)
+    return sorted(out)
+
 # ── Equation ────────────────────────────────────────────────────────────────
 
 class Equation:
@@ -407,6 +567,512 @@ class Equation:
         except Exception:
             return np.full_like(x_mesh, np.nan, dtype=float)
 
+# ── Equation analysis ──────────────────────────────────────────────────────
+
+class EquationAnalyzer:
+    """Decompose an Equation into canonical form, coefficients, and features."""
+
+    @staticmethod
+    def analyze(eq):
+        try:
+            if eq.implicit:
+                return EquationAnalyzer._analyze_implicit(eq)
+            return EquationAnalyzer._analyze_explicit(eq)
+        except Exception as exc:
+            return {
+                'type': 'unknown', 'title': 'Curve',
+                'rows': [('value', sp.latex(eq.sym_expr))],
+                'coefficients': [], 'features': [], 'asymptotes': [],
+                'directrix': None, 'error': str(exc),
+            }
+
+    # ── Explicit ────────────────────────────────────────────────────────
+    @staticmethod
+    def _analyze_explicit(eq):
+        expr = sp.expand(eq.sym_expr)
+        try:
+            poly = sp.Poly(expr, _X)
+            degree = poly.degree()
+        except Exception:
+            poly, degree = None, -1
+        if poly is not None and 1 <= degree <= 5:
+            return EquationAnalyzer._poly_explicit(eq, expr, poly, degree)
+        return EquationAnalyzer._curve_explicit(eq, expr)
+
+    @staticmethod
+    def _poly_explicit(eq, expr, poly, degree):
+        coeffs = poly.all_coeffs()  # descending; sympy values
+        features = []
+        # x-intercepts (real roots)
+        for r in _real_roots_of(expr, _X):
+            features.append(('x-int', r, 0.0, 'intercept'))
+        # y-intercept
+        try:
+            y0 = float(expr.subs(_X, 0))
+            features.append(('y-int', 0.0, y0, 'intercept'))
+        except Exception:
+            pass
+
+        if degree == 1:
+            m_sym, c_sym = coeffs
+            value_expr = m_sym * _X + c_sym
+            return {
+                'type': 'line', 'title': 'Line',
+                'rows': [
+                    ('canonical', r'y = m\,x + c'),
+                    ('value', f'y = {sp.latex(value_expr)}'),
+                ],
+                'coefficients': [('m', _fv(m_sym)), ('c', _fv(c_sym))],
+                'features': features, 'asymptotes': [], 'directrix': None,
+            }
+
+        if degree == 2:
+            a_sym, b_sym, c_sym = coeffs
+            h_sym = sp.simplify(-b_sym / (2 * a_sym))
+            k_sym = sp.simplify(c_sym - b_sym**2 / (4 * a_sym))
+            try:
+                vx = float(h_sym); vy = float(k_sym)
+                features.append(('vertex', vx, vy, 'vertex'))
+            except Exception:
+                pass
+            value_expr = a_sym * (_X - h_sym)**2 + k_sym
+            return {
+                'type': 'parabola', 'title': 'Parabola',
+                'rows': [
+                    ('vertex form', 'y = a(x - h)^2 + k'),
+                    ('value', f'y = {sp.latex(value_expr)}'),
+                    ('standard', f'y = {sp.latex(expr)}'),
+                ],
+                'coefficients': [
+                    ('a', _fv(a_sym)), ('b', _fv(b_sym)), ('c', _fv(c_sym)),
+                    ('h', _fv(h_sym)), ('k', _fv(k_sym)),
+                ],
+                'features': features, 'asymptotes': [], 'directrix': None,
+            }
+
+        # Degree 3-5: critical and inflection
+        for r in _real_roots_of(sp.diff(expr, _X), _X):
+            try:
+                y = float(expr.subs(_X, r))
+                features.append(('crit', r, y, 'critical'))
+            except Exception:
+                pass
+        if degree >= 3:
+            for r in _real_roots_of(sp.diff(expr, _X, 2), _X):
+                try:
+                    y = float(expr.subs(_X, r))
+                    features.append(('infl', r, y, 'inflection'))
+                except Exception:
+                    pass
+
+        canonical_template = (
+            'y = ' + ' + '.join(
+                ('a_{' + str(degree - i) + '}\\,x^{' + str(degree - i) + '}'
+                 if degree - i > 1 else
+                 ('a_1\\,x' if degree - i == 1 else 'a_0'))
+                for i in range(degree + 1)
+            )
+        )
+        rows = [('canonical', canonical_template)]
+        try:
+            factored = sp.factor(expr)
+            if str(factored) != str(expr):
+                rows.append(('factored', f'y = {sp.latex(factored)}'))
+        except Exception:
+            pass
+        rows.append(('standard', f'y = {sp.latex(expr)}'))
+
+        coeffs_disp = []
+        for i, val in enumerate(coeffs):
+            power = degree - i
+            coeffs_disp.append((f'a_{{{power}}}', _fv(val)))
+
+        title_map = {3: 'Cubic', 4: 'Quartic', 5: 'Quintic'}
+        type_map = {3: 'cubic', 4: 'quartic', 5: 'quintic'}
+        return {
+            'type': type_map[degree], 'title': title_map[degree],
+            'rows': rows, 'coefficients': coeffs_disp,
+            'features': features, 'asymptotes': [], 'directrix': None,
+        }
+
+    @staticmethod
+    def _curve_explicit(eq, expr):
+        features = []
+        try:
+            y0 = float(expr.subs(_X, 0))
+            if math.isfinite(y0):
+                features.append(('y-int', 0.0, y0, 'intercept'))
+        except Exception:
+            pass
+        return {
+            'type': 'curve', 'title': 'Curve',
+            'rows': [('value', f'y = {sp.latex(expr)}')],
+            'coefficients': [], 'features': features,
+            'asymptotes': [], 'directrix': None,
+        }
+
+    # ── Implicit ────────────────────────────────────────────────────────
+    @staticmethod
+    def _analyze_implicit(eq):
+        F = sp.expand(eq.sym_expr)
+        try:
+            poly = sp.Poly(F, _X, _Y)
+            tot_deg = poly.total_degree()
+        except Exception:
+            tot_deg = -1
+        if tot_deg < 0 or tot_deg > 2:
+            return EquationAnalyzer._curve_implicit(eq, F)
+        if tot_deg == 1:
+            return EquationAnalyzer._line_implicit(eq, F)
+        return EquationAnalyzer._conic_implicit(eq, F)
+
+    @staticmethod
+    def _line_implicit(eq, F):
+        D = F.coeff(_X, 1).coeff(_Y, 0)
+        E = F.coeff(_X, 0).coeff(_Y, 1)
+        Fc = F.subs({_X: 0, _Y: 0})
+        features = []
+        if E != 0:
+            try:
+                m = float(-D / E)
+                c = float(-Fc / E)
+                features.append(('y-int', 0.0, c, 'intercept'))
+                if abs(m) > 1e-12:
+                    features.append(('x-int', -c / m, 0.0, 'intercept'))
+                value_expr = sp.simplify(-D / E) * _X + sp.simplify(-Fc / E)
+                return {
+                    'type': 'line', 'title': 'Line',
+                    'rows': [
+                        ('canonical', r'y = m\,x + c'),
+                        ('value', f'y = {sp.latex(value_expr)}'),
+                        ('standard', f'{sp.latex(F)} = 0'),
+                    ],
+                    'coefficients': [('m', _fv(m)), ('c', _fv(c))],
+                    'features': features, 'asymptotes': [], 'directrix': None,
+                }
+            except Exception:
+                pass
+        if D != 0:
+            try:
+                x_val = float(-Fc / D)
+                features.append(('x-int', x_val, 0.0, 'intercept'))
+                return {
+                    'type': 'line', 'title': 'Vertical Line',
+                    'rows': [
+                        ('canonical', 'x = c'),
+                        ('value', f'x = {_fv(x_val)}'),
+                    ],
+                    'coefficients': [('c', _fv(x_val))],
+                    'features': features, 'asymptotes': [], 'directrix': None,
+                }
+            except Exception:
+                pass
+        return EquationAnalyzer._curve_implicit(eq, F)
+
+    @staticmethod
+    def _conic_implicit(eq, F):
+        A = F.coeff(_X, 2).coeff(_Y, 0)
+        B = F.coeff(_X, 1).coeff(_Y, 1)
+        C = F.coeff(_X, 0).coeff(_Y, 2)
+        D = F.coeff(_X, 1).coeff(_Y, 0)
+        E = F.coeff(_X, 0).coeff(_Y, 1)
+        Fc = F.subs({_X: 0, _Y: 0})
+
+        coeffs_basic = [
+            ('A', _fv(A)), ('B', _fv(B)), ('C', _fv(C)),
+            ('D', _fv(D)), ('E', _fv(E)), ('F', _fv(Fc)),
+        ]
+        disc = B**2 - 4 * A * C
+
+        if B != 0:
+            return {
+                'type': 'rotated-conic', 'title': 'Rotated Conic',
+                'rows': [
+                    ('general', 'A x^2 + B x y + C y^2 + D x + E y + F = 0'),
+                    ('value', f'{sp.latex(F)} = 0'),
+                ],
+                'coefficients': coeffs_basic + [('B^2 - 4AC', _fv(disc))],
+                'features': [], 'asymptotes': [], 'directrix': None,
+            }
+
+        # Circle
+        if A != 0 and C != 0 and sp.simplify(A - C) == 0:
+            return EquationAnalyzer._circle(eq, A, D, E, Fc)
+
+        # Ellipse / hyperbola (both A and C nonzero)
+        if A != 0 and C != 0:
+            return EquationAnalyzer._ellipse_or_hyperbola(eq, A, C, D, E, Fc, coeffs_basic, disc)
+
+        # Axis-aligned parabola (one of A,C zero)
+        if A != 0 and C == 0:
+            return EquationAnalyzer._parabola_v(eq, A, D, E, Fc)
+        if C != 0 and A == 0:
+            return EquationAnalyzer._parabola_h(eq, C, D, E, Fc)
+
+        return EquationAnalyzer._degenerate(eq, F, coeffs_basic, disc)
+
+    @staticmethod
+    def _circle(eq, A, D, E, Fc):
+        h_sym = sp.simplify(-D / (2 * A))
+        k_sym = sp.simplify(-E / (2 * A))
+        r2_sym = sp.simplify((D**2 + E**2) / (4 * A**2) - Fc / A)
+        try:
+            h_f = float(h_sym); k_f = float(k_sym); r2_f = float(r2_sym)
+        except Exception:
+            h_f = k_f = r2_f = None
+        features = []
+        if h_f is not None and r2_f is not None and r2_f > 0:
+            features.append(('center', h_f, k_f, 'center'))
+            r_f = math.sqrt(r2_f)
+            # x-intercepts (y=0)
+            x_rad = r2_f - k_f * k_f
+            if x_rad >= 0:
+                sx = math.sqrt(x_rad)
+                features.append(('x-int', h_f + sx, 0.0, 'intercept'))
+                if sx > 1e-12:
+                    features.append(('x-int', h_f - sx, 0.0, 'intercept'))
+            # y-intercepts (x=0)
+            y_rad = r2_f - h_f * h_f
+            if y_rad >= 0:
+                sy = math.sqrt(y_rad)
+                features.append(('y-int', 0.0, k_f + sy, 'intercept'))
+                if sy > 1e-12:
+                    features.append(('y-int', 0.0, k_f - sy, 'intercept'))
+        else:
+            r_f = None
+        value_lhs = (_X - h_sym)**2 + (_Y - k_sym)**2
+        return {
+            'type': 'circle', 'title': 'Circle',
+            'rows': [
+                ('canonical', '(x - h)^2 + (y - k)^2 = r^2'),
+                ('value', f'{sp.latex(value_lhs)} = {sp.latex(r2_sym)}'),
+            ],
+            'coefficients': [
+                ('h', _fv(h_sym)), ('k', _fv(k_sym)),
+                ('r', _fv(sp.sqrt(r2_sym)) if r2_f is not None and r2_f > 0 else _fv(r2_sym) + r' \;(r^2)'),
+            ],
+            'features': features, 'asymptotes': [], 'directrix': None,
+        }
+
+    @staticmethod
+    def _ellipse_or_hyperbola(eq, A, C, D, E, Fc, coeffs_basic, disc):
+        h_sym = sp.simplify(-D / (2 * A))
+        k_sym = sp.simplify(-E / (2 * C))
+        R_sym = sp.simplify(D**2 / (4 * A) + E**2 / (4 * C) - Fc)
+        try:
+            A_f = float(A); C_f = float(C)
+            h_f = float(h_sym); k_f = float(k_sym); R_f = float(R_sym)
+        except Exception:
+            return EquationAnalyzer._degenerate(eq, eq.sym_expr, coeffs_basic, disc)
+
+        if abs(R_f) < 1e-14:
+            return EquationAnalyzer._degenerate(eq, eq.sym_expr, coeffs_basic, disc)
+
+        # Normalize so RHS = 1: divide through by R
+        # A(x-h)^2 + C(y-k)^2 = R  →  (x-h)^2/(R/A) + (y-k)^2/(R/C) = 1
+        if A_f * C_f > 0:
+            # Ellipse (require R same sign as A → all positive)
+            p2 = R_f / A_f
+            q2 = R_f / C_f
+            if p2 <= 0 or q2 <= 0:
+                return EquationAnalyzer._degenerate(eq, eq.sym_expr, coeffs_basic, disc)
+            p = math.sqrt(p2); q = math.sqrt(q2)
+            features = [('center', h_f, k_f, 'center')]
+            if p >= q:
+                semi_a, semi_b = p, q
+                c_f = math.sqrt(p2 - q2)
+                foci = [(h_f + c_f, k_f), (h_f - c_f, k_f)]
+                vertices = [(h_f + p, k_f), (h_f - p, k_f),
+                            (h_f, k_f + q), (h_f, k_f - q)]
+            else:
+                semi_a, semi_b = q, p
+                c_f = math.sqrt(q2 - p2)
+                foci = [(h_f, k_f + c_f), (h_f, k_f - c_f)]
+                vertices = [(h_f, k_f + q), (h_f, k_f - q),
+                            (h_f + p, k_f), (h_f - p, k_f)]
+            for vx, vy in vertices:
+                features.append(('vert', vx, vy, 'vertex'))
+            for fx, fy in foci:
+                features.append(('focus', fx, fy, 'focus'))
+            value_lhs = (_X - h_sym)**2 / sp.simplify(R_sym/A) + (_Y - k_sym)**2 / sp.simplify(R_sym/C)
+            return {
+                'type': 'ellipse', 'title': 'Ellipse',
+                'rows': [
+                    ('canonical', r'\frac{(x - h)^2}{a^2} + \frac{(y - k)^2}{b^2} = 1'),
+                    ('value', f'{sp.latex(value_lhs)} = 1'),
+                ],
+                'coefficients': [
+                    ('h', _fv(h_sym)), ('k', _fv(k_sym)),
+                    ('a', _fv(semi_a)), ('b', _fv(semi_b)),
+                    ('c', _fv(c_f)), ('e', _fv(c_f / semi_a) if semi_a > 0 else '?'),
+                ],
+                'features': features, 'asymptotes': [], 'directrix': None,
+            }
+
+        # Hyperbola: A_f * C_f < 0
+        # (x-h)^2 / (R/A) + (y-k)^2 / (R/C) = 1, but one denominator is negative.
+        # Move negative term to RHS (subtraction). Pick positive form:
+        if R_f / A_f > 0:
+            # opens horizontally
+            a2 = R_f / A_f
+            b2 = -R_f / C_f
+            a = math.sqrt(a2); b = math.sqrt(b2)
+            c_f = math.sqrt(a2 + b2)
+            vertices = [(h_f + a, k_f), (h_f - a, k_f)]
+            foci = [(h_f + c_f, k_f), (h_f - c_f, k_f)]
+            asymptotes = [
+                ('y=mx+c', b / a, k_f - (b / a) * h_f),
+                ('y=mx+c', -b / a, k_f + (b / a) * h_f),
+            ]
+            value_lhs = (_X - h_sym)**2 / sp.nsimplify(a2, rational=False) - (_Y - k_sym)**2 / sp.nsimplify(b2, rational=False)
+            canon = r'\frac{(x - h)^2}{a^2} - \frac{(y - k)^2}{b^2} = 1'
+        else:
+            # opens vertically
+            a2 = R_f / C_f
+            b2 = -R_f / A_f
+            a = math.sqrt(a2); b = math.sqrt(b2)
+            c_f = math.sqrt(a2 + b2)
+            vertices = [(h_f, k_f + a), (h_f, k_f - a)]
+            foci = [(h_f, k_f + c_f), (h_f, k_f - c_f)]
+            asymptotes = [
+                ('y=mx+c', a / b, k_f - (a / b) * h_f),
+                ('y=mx+c', -a / b, k_f + (a / b) * h_f),
+            ]
+            value_lhs = (_Y - k_sym)**2 / sp.nsimplify(a2, rational=False) - (_X - h_sym)**2 / sp.nsimplify(b2, rational=False)
+            canon = r'\frac{(y - k)^2}{a^2} - \frac{(x - h)^2}{b^2} = 1'
+
+        features = [('center', h_f, k_f, 'center')]
+        for vx, vy in vertices:
+            features.append(('vert', vx, vy, 'vertex'))
+        for fx, fy in foci:
+            features.append(('focus', fx, fy, 'focus'))
+        return {
+            'type': 'hyperbola', 'title': 'Hyperbola',
+            'rows': [
+                ('canonical', canon),
+                ('value', f'{sp.latex(value_lhs)} = 1'),
+            ],
+            'coefficients': [
+                ('h', _fv(h_sym)), ('k', _fv(k_sym)),
+                ('a', _fv(a)), ('b', _fv(b)), ('c', _fv(c_f)),
+                ('e', _fv(c_f / a) if a > 0 else '?'),
+            ],
+            'features': features, 'asymptotes': asymptotes, 'directrix': None,
+        }
+
+    @staticmethod
+    def _parabola_v(eq, A, D, E, Fc):
+        # A x^2 + D x + E y + F = 0; need E != 0 for explicit parabola in y
+        if E == 0:
+            return EquationAnalyzer._degenerate(eq, eq.sym_expr,
+                [('A', _fv(A)), ('D', _fv(D)), ('E', _fv(E)), ('F', _fv(Fc))], 0)
+        try:
+            A_f = float(A); D_f = float(D); E_f = float(E); F_f = float(Fc)
+        except Exception:
+            return EquationAnalyzer._degenerate(eq, eq.sym_expr,
+                [('A', _fv(A)), ('D', _fv(D)), ('E', _fv(E)), ('F', _fv(Fc))], 0)
+        a = -A_f / E_f
+        b = -D_f / E_f
+        c = -F_f / E_f
+        h = -b / (2 * a)
+        k = c - b * b / (4 * a)
+        p = 1.0 / (4 * a)  # focal distance (signed)
+        features = [
+            ('vertex', h, k, 'vertex'),
+            ('focus', h, k + p, 'focus'),
+        ]
+        # x-intercepts
+        disc_p = b * b - 4 * a * c
+        if disc_p >= 0:
+            sd = math.sqrt(disc_p)
+            features.append(('x-int', (-b + sd) / (2 * a), 0.0, 'intercept'))
+            if sd > 1e-10:
+                features.append(('x-int', (-b - sd) / (2 * a), 0.0, 'intercept'))
+        features.append(('y-int', 0.0, c, 'intercept'))
+
+        a_sym = sp.nsimplify(a, rational=False, tolerance=1e-10)
+        h_sym = sp.nsimplify(h, rational=False, tolerance=1e-10)
+        k_sym = sp.nsimplify(k, rational=False, tolerance=1e-10)
+        value_expr = a_sym * (_X - h_sym)**2 + k_sym
+        return {
+            'type': 'parabola', 'title': 'Parabola (vertical axis)',
+            'rows': [
+                ('canonical', 'y = a(x - h)^2 + k'),
+                ('value', f'y = {sp.latex(value_expr)}'),
+            ],
+            'coefficients': [
+                ('a', _fv(a)), ('h', _fv(h)), ('k', _fv(k)),
+                ('focus', f'({_fv(h)},\\,{_fv(k + p)})'),
+            ],
+            'features': features, 'asymptotes': [],
+            'directrix': ('y', k - p),
+        }
+
+    @staticmethod
+    def _parabola_h(eq, C, D, E, Fc):
+        # C y^2 + D x + E y + F = 0; need D != 0
+        if D == 0:
+            return EquationAnalyzer._degenerate(eq, eq.sym_expr,
+                [('C', _fv(C)), ('D', _fv(D)), ('E', _fv(E)), ('F', _fv(Fc))], 0)
+        try:
+            C_f = float(C); D_f = float(D); E_f = float(E); F_f = float(Fc)
+        except Exception:
+            return EquationAnalyzer._degenerate(eq, eq.sym_expr,
+                [('C', _fv(C)), ('D', _fv(D)), ('E', _fv(E)), ('F', _fv(Fc))], 0)
+        a = -C_f / D_f
+        b = -E_f / D_f
+        c = -F_f / D_f
+        k = -b / (2 * a)
+        h = c - b * b / (4 * a)
+        p = 1.0 / (4 * a)
+        features = [
+            ('vertex', h, k, 'vertex'),
+            ('focus', h + p, k, 'focus'),
+        ]
+        disc_p = b * b - 4 * a * c
+        if disc_p >= 0:
+            sd = math.sqrt(disc_p)
+            features.append(('y-int', 0.0, (-b + sd) / (2 * a), 'intercept'))
+            if sd > 1e-10:
+                features.append(('y-int', 0.0, (-b - sd) / (2 * a), 'intercept'))
+        features.append(('x-int', c, 0.0, 'intercept'))
+
+        a_sym = sp.nsimplify(a, rational=False, tolerance=1e-10)
+        h_sym = sp.nsimplify(h, rational=False, tolerance=1e-10)
+        k_sym = sp.nsimplify(k, rational=False, tolerance=1e-10)
+        value_expr = a_sym * (_Y - k_sym)**2 + h_sym
+        return {
+            'type': 'parabola', 'title': 'Parabola (horizontal axis)',
+            'rows': [
+                ('canonical', 'x = a(y - k)^2 + h'),
+                ('value', f'x = {sp.latex(value_expr)}'),
+            ],
+            'coefficients': [
+                ('a', _fv(a)), ('h', _fv(h)), ('k', _fv(k)),
+                ('focus', f'({_fv(h + p)},\\,{_fv(k)})'),
+            ],
+            'features': features, 'asymptotes': [],
+            'directrix': ('x', h - p),
+        }
+
+    @staticmethod
+    def _degenerate(eq, F, coeffs_basic, disc):
+        return {
+            'type': 'degenerate', 'title': 'Degenerate Conic',
+            'rows': [('value', f'{sp.latex(F)} = 0')],
+            'coefficients': coeffs_basic + ([('B^2-4AC', _fv(disc))] if disc != 0 else []),
+            'features': [], 'asymptotes': [], 'directrix': None,
+        }
+
+    @staticmethod
+    def _curve_implicit(eq, F):
+        return {
+            'type': 'implicit-curve', 'title': 'Implicit Curve',
+            'rows': [('value', f'{sp.latex(F)} = 0')],
+            'coefficients': [], 'features': [],
+            'asymptotes': [], 'directrix': None,
+        }
+
 # ── App ─────────────────────────────────────────────────────────────────────
 
 class GraphCalcApp:
@@ -418,6 +1084,10 @@ class GraphCalcApp:
         self._hpos = -1
         self._snapshots = []
         self._dpr = window.devicePixelRatio or 1
+        self.selected = None
+        self._axes_box = None       # (x0, y0, w, h) in CSS-fraction (top-down)
+        self._render_size = (0, 0)  # (cw_css, ch_css)
+        self._analysis_cache = {}
 
     def _next_name(self):
         used = {e.name for e in self.equations}
@@ -486,18 +1156,27 @@ class GraphCalcApp:
         legend_handles = []
         from itertools import combinations
 
+        # Drop selection if its equation was removed; prune analysis cache
+        if self.selected is not None and self.selected not in self.equations:
+            self.selected = None
+            _hide_info_panel()
+        live_ids = {id(e) for e in self.equations}
+        self._analysis_cache = {k: v for k, v in self._analysis_cache.items() if k in live_ids}
+
         for eq in self.equations:
+            is_sel = eq is self.selected
+            lw = 3.4 if is_sel else 2.4
             if eq.implicit:
                 xi = np.linspace(self.x_min, self.x_max, 800)
                 yi = np.linspace(self.y_min, self.y_max, 800)
                 Xm, Ym = np.meshgrid(xi, yi)
                 Zm = eq.evaluate_2d(Xm, Ym)
-                ax.contour(Xm, Ym, Zm, levels=[0], colors=[eq.color], linewidths=2.4, zorder=5)
-                legend_handles.append(Line2D([0], [0], color=eq.color, linewidth=2.4, label=eq.label))
+                ax.contour(Xm, Ym, Zm, levels=[0], colors=[eq.color], linewidths=lw, zorder=5)
+                legend_handles.append(Line2D([0], [0], color=eq.color, linewidth=lw, label=eq.label))
             else:
                 y_arr = eq.evaluate(x_arr)
                 y_plot = _sanitize(y_arr, self.y_min, self.y_max)
-                line, = ax.plot(x_arr, y_plot, color=eq.color, linewidth=2.4, label=eq.label, zorder=5, solid_capstyle='round')
+                line, = ax.plot(x_arr, y_plot, color=eq.color, linewidth=lw, label=eq.label, zorder=5, solid_capstyle='round')
                 legend_handles.append(line)
 
         # Intersections
@@ -512,11 +1191,19 @@ class GraphCalcApp:
                 bbox=dict(boxstyle='round,pad=0.3', fc='white', alpha=0.9, ec='#aaaaaa', lw=0.7),
             )
 
+        # Selected-equation highlights
+        if self.selected is not None and self.selected in self.equations:
+            self._draw_highlights(ax, self.selected, tick_size)
+
         if legend_handles:
             ax.legend(handles=legend_handles, loc='upper right', fontsize=max(9, tick_size),
                       framealpha=0.92, facecolor='white', edgecolor='#bbbbbb', borderpad=0.6)
 
         fig.tight_layout(pad=0.6)
+        # Capture axes geometry for click→data mapping (CSS coords, top-down)
+        bbox = ax.get_position()
+        self._axes_box = (bbox.x0, 1.0 - bbox.y1, bbox.width, bbox.height)
+        self._render_size = (cw, ch)
 
         # Render to canvas
         buf = io.BytesIO()
@@ -828,8 +1515,10 @@ class GraphCalcApp:
         el.innerHTML = ''
         for eq in self.equations:
             pill = document.createElement('span')
-            pill.className = 'eq-pill'
+            cls = 'eq-pill selected' if eq is self.selected else 'eq-pill'
+            pill.className = cls
             pill.style.background = eq.color
+            pill.setAttribute('data-name', eq.name)
             pill.innerHTML = f'{eq.name}: {eq.display_text} <span class="x-btn" data-name="{eq.name}">x</span>'
             el.appendChild(pill)
 
@@ -843,6 +1532,219 @@ class GraphCalcApp:
         self.x_min, self.x_max = cx - dx, cx + dx
         self.y_min, self.y_max = cy - dy, cy + dy
         self.redraw()
+
+    # ── Selection / analysis ────────────────────────────────────────────────
+
+    MARKER_STYLES = {
+        # marker, size, facecolor, edgecolor, edgewidth
+        'intercept':  ('o', 8.5, 'curve',   '#ffffff', 1.6),
+        'vertex':     ('s', 9.5, 'curve',   '#ffffff', 1.6),
+        'center':     ('P', 11.0, '#ffffff', 'curve',  1.8),
+        'focus':      ('^', 10.0, 'curve',   '#111111', 1.4),
+        'critical':   ('o', 9.0, 'none',    'curve',  2.0),
+        'inflection': ('D', 8.5, 'curve',   '#111111', 1.2),
+    }
+
+    def _draw_highlights(self, ax, eq, tick_size):
+        """Draw analysis features for the selected equation."""
+        analysis = self._get_analysis(eq)
+        # Curve features
+        for label, x, y, kind in analysis.get('features', []):
+            if not (self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max):
+                continue
+            style = self.MARKER_STYLES.get(kind, self.MARKER_STYLES['intercept'])
+            marker, size, fc, ec, ew = style
+            face = eq.color if fc == 'curve' else fc
+            edge = eq.color if ec == 'curve' else ec
+            ax.plot(x, y, marker=marker, markersize=size,
+                    markerfacecolor=face, markeredgecolor=edge, markeredgewidth=ew,
+                    linestyle='None', zorder=9)
+            ax.annotate(
+                f'{label} ({_fc(x)}, {_fc(y)})',
+                xy=(x, y), xytext=(10, 10),
+                textcoords='offset points',
+                fontsize=max(8, tick_size - 1), color='#111111',
+                bbox=dict(boxstyle='round,pad=0.25', fc='white', alpha=0.9, ec=eq.color, lw=0.8),
+                zorder=10,
+            )
+        # Asymptotes (hyperbola): list of ('y=mx+c', m, c)
+        for asymp in analysis.get('asymptotes', []) or []:
+            try:
+                kind, m, c = asymp[0], float(asymp[1]), float(asymp[2])
+                xs = np.linspace(self.x_min, self.x_max, 50)
+                ax.plot(xs, m * xs + c, color=eq.color, linestyle='--',
+                        linewidth=1.2, alpha=0.55, zorder=4)
+            except Exception:
+                pass
+        # Directrix (parabola)
+        d = analysis.get('directrix')
+        if d:
+            try:
+                axis, val = d
+                if axis == 'y':
+                    ax.axhline(float(val), color=eq.color, linestyle=':',
+                               linewidth=1.4, alpha=0.7, zorder=4)
+                else:
+                    ax.axvline(float(val), color=eq.color, linestyle=':',
+                               linewidth=1.4, alpha=0.7, zorder=4)
+            except Exception:
+                pass
+
+    def _get_analysis(self, eq):
+        key = id(eq)
+        cached = self._analysis_cache.get(key)
+        if cached is not None:
+            return cached
+        analysis = EquationAnalyzer.analyze(eq)
+        self._analysis_cache[key] = analysis
+        return analysis
+
+    def select(self, eq):
+        if eq not in self.equations:
+            return
+        self.selected = eq
+        self._render_info_panel(eq)
+        self.redraw()
+
+    def deselect(self):
+        if self.selected is None:
+            return
+        self.selected = None
+        _hide_info_panel()
+        self.redraw()
+
+    def _render_info_panel(self, eq):
+        analysis = self._get_analysis(eq)
+        panel = document.getElementById('info-panel')
+        panel.style.borderLeftColor = eq.color
+        document.getElementById('info-name').textContent = eq.name
+        document.getElementById('info-name').style.background = eq.color
+        document.getElementById('info-title').textContent = analysis.get('title', 'Curve')
+
+        # Equation rows (KaTeX)
+        eq_div = document.getElementById('info-equation')
+        eq_div.innerHTML = ''
+        for label, latex_str in analysis.get('rows', []):
+            row = document.createElement('div')
+            row.className = 'eq-row'
+            lab = document.createElement('span')
+            lab.className = 'eq-label'
+            lab.textContent = f'{label}:'
+            row.appendChild(lab)
+            tex = document.createElement('span')
+            row.appendChild(tex)
+            eq_div.appendChild(row)
+            try:
+                window.katex.render(latex_str, tex, window.Object.fromEntries(
+                    [['throwOnError', False], ['displayMode', False]]
+                ))
+            except Exception:
+                tex.textContent = latex_str
+
+        # Coefficients
+        coeffs_div = document.getElementById('info-coeffs')
+        coeffs_div.innerHTML = ''
+        coeffs = analysis.get('coefficients', [])
+        document.getElementById('info-coeffs-label').style.display = '' if coeffs else 'none'
+        for name_latex, value_latex in coeffs:
+            row = document.createElement('div')
+            row.className = 'coeff'
+            coeffs_div.appendChild(row)
+            try:
+                window.katex.render(f'{name_latex} = {value_latex}', row,
+                    window.Object.fromEntries([['throwOnError', False], ['displayMode', False]]))
+            except Exception:
+                row.textContent = f'{name_latex} = {value_latex}'
+
+        # Features
+        feats_div = document.getElementById('info-features')
+        feats_div.innerHTML = ''
+        feats = analysis.get('features', [])
+        document.getElementById('info-features-label').style.display = '' if feats else 'none'
+        # group by label for compactness
+        grouped = {}
+        order = []
+        for label, x, y, kind in feats:
+            key = (label, kind)
+            if key not in grouped:
+                grouped[key] = []
+                order.append(key)
+            grouped[key].append((x, y))
+        for key in order:
+            label, kind = key
+            row = document.createElement('div')
+            row.className = 'feature'
+            dot = document.createElement('span')
+            dot.className = 'marker-dot'
+            dot.style.background = eq.color
+            row.appendChild(dot)
+            pts = grouped[key]
+            pts_str = ', '.join(f'({_fc(x)}, {_fc(y)})' for x, y in pts)
+            text = document.createElement('span')
+            text.textContent = f'{label}: {pts_str}'
+            row.appendChild(text)
+            feats_div.appendChild(row)
+
+        panel.classList.add('visible')
+
+    def find_nearest_curve(self, px, py, cw=None, ch=None):
+        """Map a click in CSS pixels to the nearest equation curve. Returns (eq, dist_px) or (None, inf)."""
+        if self._axes_box is None or not self.equations:
+            return None, float('inf')
+        if cw is None or ch is None or cw <= 0 or ch <= 0:
+            cw, ch = self._render_size
+        ax0, ay0, aw, ah = self._axes_box
+        # Pixel position of axes within image
+        ax_px0 = ax0 * cw
+        ay_px0 = ay0 * ch
+        ax_pxw = aw * cw
+        ax_pxh = ah * ch
+        if ax_pxw <= 0 or ax_pxh <= 0:
+            return None, float('inf')
+        if not (ax_px0 <= px <= ax_px0 + ax_pxw and ay_px0 <= py <= ay_px0 + ax_pxh):
+            return None, float('inf')
+        # Pixel → data
+        u = (px - ax_px0) / ax_pxw
+        v = (py - ay_px0) / ax_pxh
+        x_data = self.x_min + u * (self.x_max - self.x_min)
+        y_data = self.y_max - v * (self.y_max - self.y_min)
+        # Pixel-per-data scales (used to convert distance back to px)
+        sx_ppd = ax_pxw / (self.x_max - self.x_min)
+        sy_ppd = ax_pxh / (self.y_max - self.y_min)
+
+        best_eq = None
+        best_d = float('inf')
+        for eq in self.equations:
+            d = self._curve_dist_px(eq, x_data, y_data, sx_ppd, sy_ppd)
+            if d < best_d:
+                best_d = d
+                best_eq = eq
+        return best_eq, best_d
+
+    def _curve_dist_px(self, eq, x_data, y_data, sx_ppd, sy_ppd):
+        """Approximate pixel distance from a clicked point to the curve."""
+        try:
+            if eq.implicit:
+                # Implicit F(x,y)=0; gradient in pixel space:
+                #   ∂F/∂px = Fx / sx_ppd,  ∂F/∂py = Fy / sy_ppd
+                # Pixel distance ≈ |F| / sqrt((Fx/sx_ppd)² + (Fy/sy_ppd)²)
+                F = float(eq._fn2d(x_data, y_data))
+                h = max(1e-6, (self.x_max - self.x_min) * 1e-5)
+                Fx = (float(eq._fn2d(x_data + h, y_data)) - F) / h
+                Fy = (float(eq._fn2d(x_data, y_data + h)) - F) / h
+                denom = math.hypot(Fx / sx_ppd, Fy / sy_ppd)
+                if denom < 1e-12:
+                    return float('inf')
+                return abs(F) / denom
+            try:
+                y_eq = float(eq._fn(x_data))
+            except Exception:
+                return float('inf')
+            if not math.isfinite(y_eq):
+                return float('inf')
+            return abs(y_eq - y_data) * sy_ppd
+        except Exception:
+            return float('inf')
 
 
 # ── DOM wiring ──────────────────────────────────────────────────────────────
@@ -918,6 +1820,11 @@ def on_wheel(event):
     factor = 1.15 if event.deltaY < 0 else 1 / 1.15
     app.zoom(factor)
 
+def _hide_info_panel():
+    panel = document.getElementById('info-panel')
+    if panel is not None:
+        panel.classList.remove('visible')
+
 def on_click(event):
     target = event.target
     if target.classList.contains('x-btn'):
@@ -925,11 +1832,55 @@ def on_click(event):
         if name:
             app._save_snapshot()
             before = len(app.equations)
+            removed = [e for e in app.equations if e.name == name]
             app.equations = [e for e in app.equations if e.name != name]
             if len(app.equations) < before:
+                if removed and app.selected in removed:
+                    app.selected = None
+                    _hide_info_panel()
                 set_status(f'Removed {name}.')
                 app._auto_fit()
                 app.redraw()
+        return
+    # Pill click → toggle analysis for that equation
+    try:
+        pill = target.closest('.eq-pill')
+    except Exception:
+        pill = None
+    if pill is None:
+        return
+    name = pill.getAttribute('data-name')
+    eq = next((e for e in app.equations if e.name == name), None)
+    if eq is None:
+        return
+    if app.selected is eq:
+        app.deselect()
+    else:
+        app.select(eq)
+
+def on_info_close(event):
+    app.deselect()
+
+def on_graph_click(event):
+    target = event.target
+    panel = document.getElementById('info-panel')
+    try:
+        if panel is not None and panel.contains(target):
+            return
+    except Exception:
+        pass
+    img = document.getElementById('graph-img')
+    if img is None:
+        return
+    rect = img.getBoundingClientRect()
+    px = event.clientX - rect.left
+    py = event.clientY - rect.top
+    eq, dist = app.find_nearest_curve(px, py, rect.width, rect.height)
+    if eq is not None and dist <= 12:
+        app.select(eq)
+    else:
+        if app.selected is not None:
+            app.deselect()
 
 # Touch zoom support
 _touch_dist = [0.0]
@@ -958,6 +1909,8 @@ _wheel_proxy = create_proxy(on_wheel)
 _click_proxy = create_proxy(on_click)
 _touchstart_proxy = create_proxy(on_touchstart)
 _touchmove_proxy = create_proxy(on_touchmove)
+_graph_click_proxy = create_proxy(on_graph_click)
+_info_close_proxy = create_proxy(on_info_close)
 
 inp_el = document.getElementById('eq-input')
 inp_el.addEventListener('keydown', _enter_proxy)
@@ -968,8 +1921,10 @@ container = document.getElementById('graph-container')
 container.addEventListener('wheel', _wheel_proxy)
 container.addEventListener('touchstart', _touchstart_proxy)
 container.addEventListener('touchmove', _touchmove_proxy)
+container.addEventListener('click', _graph_click_proxy)
 
 document.getElementById('eq-list').addEventListener('click', _click_proxy)
+document.getElementById('info-close').addEventListener('click', _info_close_proxy)
 
 # Resize handler
 def on_resize(event=None):
