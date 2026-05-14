@@ -76,11 +76,14 @@
     pointer-events: auto;
   }
   #info-panel.visible { display: block; }
+  #info-panel.dragging { transition: none; user-select: none; }
   #info-panel .info-header {
     display: flex;
     align-items: baseline;
     gap: 6px;
     margin-bottom: 6px;
+    cursor: move;
+    touch-action: none;
   }
   #info-panel .info-name {
     background: var(--accent);
@@ -181,6 +184,24 @@
     flex: 1;
     padding: 8px 12px;
   }
+  #equal-toggle {
+    flex: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+  }
+  #equal-toggle:hover { color: var(--text-primary); border-color: var(--border-focus); }
+  #equal-toggle.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
   #status-bar {
     min-height: 28px;
     padding: 2px 14px 8px;
@@ -218,6 +239,9 @@
     opacity: 0.6;
   }
   .eq-pill .x-btn:hover { opacity: 1; }
+  .eq-pill .pill-name { font-weight: bold; }
+  .eq-pill .pill-latex { display: inline-flex; align-items: center; }
+  .eq-pill .pill-latex .katex { color: #fff; font-size: 1em; }
 </style>
 <py-config>
   packages = ["numpy", "sympy", "matplotlib"]
@@ -352,6 +376,85 @@
 })();
 </script>
 
+<script>
+// Make #info-panel draggable via its header.
+(function() {
+  let dragging = false;
+  let startX = 0, startY = 0;
+  let panelLeft = 0, panelTop = 0;
+
+  function clientPoint(e) {
+    if (e.touches && e.touches.length) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  function onStart(e) {
+    if (e.target && e.target.id === 'info-close') return;
+    const panel = document.getElementById('info-panel');
+    if (!panel) return;
+    const container = panel.parentElement;
+    const containerRect = container.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    panelLeft = panelRect.left - containerRect.left;
+    panelTop = panelRect.top - containerRect.top;
+    const p = clientPoint(e);
+    startX = p.x;
+    startY = p.y;
+    dragging = true;
+    panel.classList.add('dragging');
+    panel.style.right = 'auto';
+    if (e.cancelable) e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    const panel = document.getElementById('info-panel');
+    if (!panel) return;
+    const container = panel.parentElement;
+    const containerRect = container.getBoundingClientRect();
+    const p = clientPoint(e);
+    let newLeft = panelLeft + (p.x - startX);
+    let newTop = panelTop + (p.y - startY);
+    const maxLeft = Math.max(0, containerRect.width - panel.offsetWidth);
+    const maxTop = Math.max(0, containerRect.height - panel.offsetHeight);
+    if (newLeft < 0) newLeft = 0;
+    if (newTop < 0) newTop = 0;
+    if (newLeft > maxLeft) newLeft = maxLeft;
+    if (newTop > maxTop) newTop = maxTop;
+    panel.style.left = newLeft + 'px';
+    panel.style.top = newTop + 'px';
+    if (e.cancelable) e.preventDefault();
+  }
+
+  function onEnd() {
+    if (!dragging) return;
+    dragging = false;
+    const panel = document.getElementById('info-panel');
+    if (panel) panel.classList.remove('dragging');
+  }
+
+  function attach() {
+    const header = document.querySelector('#info-panel .info-header');
+    if (!header) return;
+    header.addEventListener('mousedown', onStart);
+    header.addEventListener('touchstart', onStart, { passive: false });
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('mouseup', onEnd);
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onEnd);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
+</script>
+
 <div id="graph-container">
   <canvas id="graph-canvas" width="800" height="500"></canvas>
   <div id="info-panel">
@@ -372,6 +475,7 @@
 <div id="input-bar">
   <label for="eq-input">&gt;</label>
   <input id="eq-input" type="text" placeholder="y = x^2  or  x^2+y^2 = 25  or  clear" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <button id="equal-toggle" type="button" title="Toggle equal aspect ratio">1:1</button>
 </div>
 <div id="status-bar">Loading...</div>
 
@@ -1088,6 +1192,7 @@ class GraphCalcApp:
         self._axes_box = None       # (x0, y0, w, h) in CSS-fraction (top-down)
         self._render_size = (0, 0)  # (cw_css, ch_css)
         self._analysis_cache = {}
+        self._equal_axis = False
 
     def _next_name(self):
         used = {e.name for e in self.equations}
@@ -1121,6 +1226,8 @@ class GraphCalcApp:
         fig.set_facecolor('#e0e0e0')
         ax.set_xlim(self.x_min, self.x_max)
         ax.set_ylim(self.y_min, self.y_max)
+        if self._equal_axis:
+            ax.set_aspect('equal', adjustable='box')
 
         major_x = _nice_step((self.x_max - self.x_min) / 10)
         major_y = _nice_step((self.y_max - self.y_min) / 10)
@@ -1184,7 +1291,7 @@ class GraphCalcApp:
         for ix, iy in pts:
             ax.plot(ix, iy, 'o', color='#111111', markersize=7, zorder=8)
             ax.annotate(
-                f'({_fc(ix)}, {_fc(iy)})',
+                f'$({_fc(ix)},\\,{_fc(iy)})$',
                 xy=(ix, iy), xytext=(9, 9),
                 textcoords='offset points',
                 fontsize=tick_size, color='#111111',
@@ -1531,7 +1638,28 @@ class GraphCalcApp:
             pill.className = cls
             pill.style.background = eq.color
             pill.setAttribute('data-name', eq.name)
-            pill.innerHTML = f'{eq.name}: {eq.display_text} <span class="x-btn" data-name="{eq.name}">x</span>'
+
+            name_span = document.createElement('span')
+            name_span.className = 'pill-name'
+            name_span.textContent = f'{eq.name}:'
+            pill.appendChild(name_span)
+
+            latex_span = document.createElement('span')
+            latex_span.className = 'pill-latex'
+            pill.appendChild(latex_span)
+            latex_str = eq.label.strip('$')
+            try:
+                window.katex.render(latex_str, latex_span, window.Object.fromEntries(
+                    [['throwOnError', False], ['displayMode', False]]))
+            except Exception:
+                latex_span.textContent = eq.display_text
+
+            x_btn = document.createElement('span')
+            x_btn.className = 'x-btn'
+            x_btn.setAttribute('data-name', eq.name)
+            x_btn.textContent = 'x'
+            pill.appendChild(x_btn)
+
             el.appendChild(pill)
 
     def zoom(self, factor, cx=None, cy=None):
@@ -1572,7 +1700,7 @@ class GraphCalcApp:
                     markerfacecolor=face, markeredgecolor=edge, markeredgewidth=ew,
                     linestyle='None', zorder=9)
             ax.annotate(
-                f'{label} ({_fc(x)}, {_fc(y)})',
+                f'{label} $({_fc(x)},\\,{_fc(y)})$',
                 xy=(x, y), xytext=(10, 10),
                 textcoords='offset points',
                 fontsize=max(8, tick_size - 1), color='#111111',
@@ -1839,8 +1967,12 @@ def _hide_info_panel():
 
 def on_click(event):
     target = event.target
-    if target.classList.contains('x-btn'):
-        name = target.getAttribute('data-name')
+    try:
+        x_btn = target.closest('.x-btn')
+    except Exception:
+        x_btn = None
+    if x_btn is not None:
+        name = x_btn.getAttribute('data-name')
         if name:
             app._save_snapshot()
             before = len(app.equations)
@@ -1872,6 +2004,16 @@ def on_click(event):
 
 def on_info_close(event):
     app.deselect()
+
+def on_equal_toggle(event):
+    app._equal_axis = not app._equal_axis
+    btn = document.getElementById('equal-toggle')
+    if btn is not None:
+        if app._equal_axis:
+            btn.classList.add('active')
+        else:
+            btn.classList.remove('active')
+    app.redraw()
 
 def on_graph_click(event):
     target = event.target
@@ -1923,6 +2065,7 @@ _touchstart_proxy = create_proxy(on_touchstart)
 _touchmove_proxy = create_proxy(on_touchmove)
 _graph_click_proxy = create_proxy(on_graph_click)
 _info_close_proxy = create_proxy(on_info_close)
+_equal_toggle_proxy = create_proxy(on_equal_toggle)
 
 inp_el = document.getElementById('eq-input')
 inp_el.addEventListener('keydown', _enter_proxy)
@@ -1937,6 +2080,7 @@ container.addEventListener('click', _graph_click_proxy)
 
 document.getElementById('eq-list').addEventListener('click', _click_proxy)
 document.getElementById('info-close').addEventListener('click', _info_close_proxy)
+document.getElementById('equal-toggle').addEventListener('click', _equal_toggle_proxy)
 
 # Resize handler
 def on_resize(event=None):
