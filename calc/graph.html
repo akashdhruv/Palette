@@ -1210,7 +1210,19 @@ class GraphCalcApp:
         fig.savefig(buf, format='png', dpi=dpi * self._dpr, facecolor=fig.get_facecolor())
         buf.seek(0)
         b64 = base64.b64encode(buf.read()).decode('ascii')
-        container.innerHTML = f'<img id="graph-img" src="data:image/png;base64,{b64}" style="width:{cw}px;height:{ch}px;" draggable="false">'
+        src = f'data:image/png;base64,{b64}'
+        img = document.getElementById('graph-img')
+        if img is None:
+            img = document.createElement('img')
+            img.id = 'graph-img'
+            img.draggable = False
+            container.insertBefore(img, container.firstChild)
+            old_canvas = document.getElementById('graph-canvas')
+            if old_canvas is not None:
+                old_canvas.remove()
+        img.src = src
+        img.style.width = f'{cw}px'
+        img.style.height = f'{ch}px'
 
         self._update_eq_list()
 
