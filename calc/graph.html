@@ -1941,22 +1941,18 @@ class GraphCalcApp:
                 formulas = [
                     ('form',   r'x = a(y-k)^2+h'),
                     ('vertex', r'(h,\;k)'),
-                    ('k',      r'k = -\tfrac{b}{2a}'),
-                    ('h',      r'h = c-\tfrac{b^2}{4a}'),
                     ('axis',   r'y = k'),
-                    ('x-int',  r'(c,\;0)'),
-                    ('y-int',  r'y = \tfrac{-b\pm\sqrt{b^2-4ac}}{2a}'),
+                    ('x-int',  r'\text{set }y=0,\text{ solve for }x'),
+                    ('y-int',  r'\text{set }x=0,\text{ solve for }y'),
                 ]
             else:
                 # Vertical parabola (display uses y = a(x+h)^2 + k, vertex at (-h, k))
                 formulas = [
                     ('form',   r'y = a(x+h)^2+k'),
                     ('vertex', r'(-h,\;k)'),
-                    ('h',      r'h = \tfrac{b}{2a}'),
-                    ('k',      r'k = c-\tfrac{b^2}{4a}'),
-                    ('axis',   r'x = -h = -\tfrac{b}{2a}'),
-                    ('y-int',  r'(0,\;c)'),
-                    ('x-int',  r'x = \tfrac{-b\pm\sqrt{b^2-4ac}}{2a}'),
+                    ('axis',   r'x = -h'),
+                    ('y-int',  r'\text{set }x=0,\text{ solve for }y'),
+                    ('x-int',  r'\text{set }y=0,\text{ solve for }x'),
                 ]
             for lbl, ltx in formulas:
                 row = document.createElement('div')
