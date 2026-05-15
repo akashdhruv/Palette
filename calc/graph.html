@@ -732,18 +732,19 @@ class EquationAnalyzer:
 
         if degree == 2:
             a_sym, b_sym, c_sym = coeffs
-            h_sym = sp.simplify(-b_sym / (2 * a_sym))
+            vx_sym = sp.simplify(-b_sym / (2 * a_sym))
+            h_sym = sp.simplify(b_sym / (2 * a_sym))
             k_sym = sp.simplify(c_sym - b_sym**2 / (4 * a_sym))
             try:
-                vx = float(h_sym); vy = float(k_sym)
+                vx = float(vx_sym); vy = float(k_sym)
                 features.append(('vertex', vx, vy, 'vertex'))
             except Exception:
                 pass
-            value_expr = a_sym * (_X - h_sym)**2 + k_sym
+            value_expr = a_sym * (_X + h_sym)**2 + k_sym
             return {
                 'type': 'parabola', 'title': 'Parabola',
                 'rows': [
-                    ('vertex form', 'y = a(x - h)^2 + k'),
+                    ('vertex form', 'y = a(x + h)^2 + k'),
                     ('value', f'y = {sp.latex(value_expr)}'),
                     ('standard', f'y = {sp.latex(expr)}'),
                 ],
@@ -1095,17 +1096,17 @@ class EquationAnalyzer:
         features.append(('y-int', 0.0, c, 'intercept'))
 
         a_sym = sp.nsimplify(a, rational=False, tolerance=1e-10)
-        h_sym = sp.nsimplify(h, rational=False, tolerance=1e-10)
+        h_sym = sp.nsimplify(-h, rational=False, tolerance=1e-10)
         k_sym = sp.nsimplify(k, rational=False, tolerance=1e-10)
-        value_expr = a_sym * (_X - h_sym)**2 + k_sym
+        value_expr = a_sym * (_X + h_sym)**2 + k_sym
         return {
             'type': 'parabola', 'title': 'Parabola (vertical axis)',
             'rows': [
-                ('canonical', 'y = a(x - h)^2 + k'),
+                ('canonical', 'y = a(x + h)^2 + k'),
                 ('value', f'y = {sp.latex(value_expr)}'),
             ],
             'coefficients': [
-                ('a', _fv(a)), ('h', _fv(h)), ('k', _fv(k)),
+                ('a', _fv(a)), ('h', _fv(-h)), ('k', _fv(k)),
                 ('focus', f'({_fv(h)},\\,{_fv(k + p)})'),
             ],
             'features': features, 'asymptotes': [],
