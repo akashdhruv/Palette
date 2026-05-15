@@ -242,6 +242,26 @@
   .eq-pill .pill-name { font-weight: bold; }
   .eq-pill .pill-latex { display: inline-flex; align-items: center; }
   .eq-pill .pill-latex .katex { color: #fff; font-size: 1em; }
+  #info-panel .info-cheatsheet {
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 4px;
+    padding: 5px 8px 6px;
+    margin: 4px 0 0;
+  }
+  #info-panel .info-cheatsheet .cs-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0;
+    line-height: 1.5;
+  }
+  #info-panel .info-cheatsheet .cs-label {
+    color: var(--text-dim);
+    font-size: 10px;
+    min-width: 52px;
+    text-align: right;
+    flex-shrink: 0;
+  }
 </style>
 <py-config>
   packages = ["numpy", "sympy", "matplotlib"]
@@ -468,6 +488,8 @@
     <div class="info-coeffs" id="info-coeffs"></div>
     <div class="info-section-label" id="info-features-label">Features</div>
     <div class="info-features" id="info-features"></div>
+    <div class="info-section-label" id="info-cheatsheet-label">Formulas</div>
+    <div class="info-cheatsheet" id="info-cheatsheet"></div>
   </div>
 </div>
 <div id="eq-list"></div>
@@ -1905,6 +1927,55 @@ class GraphCalcApp:
                 text.textContent = f'{label}: {pts_str}'
                 row.appendChild(text)
             feats_div.appendChild(row)
+
+        # Cheat sheet (parabola only)
+        cs_div = document.getElementById('info-cheatsheet')
+        cs_label = document.getElementById('info-cheatsheet-label')
+        cs_div.innerHTML = ''
+        curve_type = analysis.get('type', '')
+        aos = analysis.get('axis_of_symmetry')
+        if curve_type == 'parabola':
+            cs_label.style.display = ''
+            if aos and aos[0] == 'y':
+                # Horizontal parabola: x = a(y-k)^2 + h, vertex (h, k)
+                formulas = [
+                    ('form',   r'x = a(y-k)^2+h'),
+                    ('vertex', r'(h,\;k)'),
+                    ('k',      r'k = -\tfrac{b}{2a}'),
+                    ('h',      r'h = c-\tfrac{b^2}{4a}'),
+                    ('axis',   r'y = k'),
+                    ('x-int',  r'(c,\;0)'),
+                    ('y-int',  r'y = \tfrac{-b\pm\sqrt{b^2-4ac}}{2a}'),
+                ]
+            else:
+                # Vertical parabola (display uses y = a(x+h)^2 + k, vertex at (-h, k))
+                formulas = [
+                    ('form',   r'y = a(x+h)^2+k'),
+                    ('vertex', r'(-h,\;k)'),
+                    ('h',      r'h = \tfrac{b}{2a}'),
+                    ('k',      r'k = c-\tfrac{b^2}{4a}'),
+                    ('axis',   r'x = -h = -\tfrac{b}{2a}'),
+                    ('y-int',  r'(0,\;c)'),
+                    ('x-int',  r'x = \tfrac{-b\pm\sqrt{b^2-4ac}}{2a}'),
+                ]
+            for lbl, ltx in formulas:
+                row = document.createElement('div')
+                row.className = 'cs-row'
+                lb = document.createElement('span')
+                lb.className = 'cs-label'
+                lb.textContent = f'{lbl}:'
+                row.appendChild(lb)
+                span = document.createElement('span')
+                row.appendChild(span)
+                cs_div.appendChild(row)
+                try:
+                    window.katex.render(ltx, span, window.Object.fromEntries(
+                        [['throwOnError', False], ['displayMode', False]]
+                    ))
+                except Exception:
+                    span.textContent = ltx
+        else:
+            cs_label.style.display = 'none'
 
         panel.classList.add('visible')
 
