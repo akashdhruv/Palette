@@ -740,19 +740,38 @@ class EquationAnalyzer:
                 features.append(('vertex', vx, vy, 'vertex'))
             except Exception:
                 pass
+            # Replace float x-intercepts with exact sympy root form
+            features = [f for f in features if f[0] != 'x-int']
+            try:
+                roots_sym = sp.solve(expr, _X)
+                for r in roots_sym:
+                    try:
+                        c_val = complex(r)
+                    except Exception:
+                        continue
+                    if abs(c_val.imag) > 1e-8:
+                        continue
+                    r_float = float(c_val.real)
+                    features.append(('x-int', r_float, 0.0, 'intercept', sp.latex(sp.simplify(r))))
+            except Exception:
+                for r in _real_roots_of(expr, _X):
+                    features.append(('x-int', r, 0.0, 'intercept'))
             value_expr = a_sym * (_X + h_sym)**2 + k_sym
+            try:
+                aos = ('x', float(vx_sym))
+            except Exception:
+                aos = None
             return {
                 'type': 'parabola', 'title': 'Parabola',
                 'rows': [
-                    ('vertex form', 'y = a(x + h)^2 + k'),
-                    ('value', f'y = {sp.latex(value_expr)}'),
-                    ('standard', f'y = {sp.latex(expr)}'),
+                    ('vertex form', f'y = {sp.latex(value_expr)}'),
+                    ('axis of sym.', f'x = {sp.latex(vx_sym)}'),
                 ],
                 'coefficients': [
-                    ('a', _fv(a_sym)), ('b', _fv(b_sym)), ('c', _fv(c_sym)),
-                    ('h', _fv(h_sym)), ('k', _fv(k_sym)),
+                    ('a', _fv(a_sym)), ('h', _fv(vx_sym)), ('k', _fv(k_sym)),
                 ],
                 'features': features, 'asymptotes': [], 'directrix': None,
+                'axis_of_symmetry': aos,
             }
 
         # Degree 3-5: critical and inflection
@@ -1094,6 +1113,29 @@ class EquationAnalyzer:
             if sd > 1e-10:
                 features.append(('x-int', (-b - sd) / (2 * a), 0.0, 'intercept'))
         features.append(('y-int', 0.0, c, 'intercept'))
+        # Replace float x-intercepts with exact sympy root form
+        features = [f for f in features if f[0] != 'x-int']
+        try:
+            a_ex = sp.nsimplify(a, rational=False, tolerance=1e-10)
+            b_ex = sp.nsimplify(b, rational=False, tolerance=1e-10)
+            c_ex = sp.nsimplify(c, rational=False, tolerance=1e-10)
+            roots_ex = sp.solve(a_ex * _X**2 + b_ex * _X + c_ex, _X)
+            for r in roots_ex:
+                try:
+                    c_val = complex(r)
+                except Exception:
+                    continue
+                if abs(c_val.imag) > 1e-8:
+                    continue
+                r_float = float(c_val.real)
+                features.append(('x-int', r_float, 0.0, 'intercept', sp.latex(sp.simplify(r))))
+        except Exception:
+            disc_p = b * b - 4 * a * c
+            if disc_p >= 0:
+                sd = math.sqrt(disc_p)
+                features.append(('x-int', (-b + sd) / (2 * a), 0.0, 'intercept'))
+                if sd > 1e-10:
+                    features.append(('x-int', (-b - sd) / (2 * a), 0.0, 'intercept'))
 
         a_sym = sp.nsimplify(a, rational=False, tolerance=1e-10)
         h_sym = sp.nsimplify(-h, rational=False, tolerance=1e-10)
@@ -1102,15 +1144,16 @@ class EquationAnalyzer:
         return {
             'type': 'parabola', 'title': 'Parabola (vertical axis)',
             'rows': [
-                ('canonical', 'y = a(x + h)^2 + k'),
-                ('value', f'y = {sp.latex(value_expr)}'),
+                ('vertex form', f'y = {sp.latex(value_expr)}'),
+                ('axis of sym.', f'x = {sp.latex(-h_sym)}'),
             ],
             'coefficients': [
-                ('a', _fv(a)), ('h', _fv(-h)), ('k', _fv(k)),
+                ('a', _fv(a)), ('h', _fv(h)), ('k', _fv(k)),
                 ('focus', f'({_fv(h)},\\,{_fv(k + p)})'),
             ],
             'features': features, 'asymptotes': [],
             'directrix': ('y', k - p),
+            'axis_of_symmetry': ('x', h),
         }
 
     @staticmethod
@@ -1149,8 +1192,8 @@ class EquationAnalyzer:
         return {
             'type': 'parabola', 'title': 'Parabola (horizontal axis)',
             'rows': [
-                ('canonical', 'x = a(y - k)^2 + h'),
-                ('value', f'x = {sp.latex(value_expr)}'),
+                ('vertex form', f'x = {sp.latex(value_expr)}'),
+                ('axis of sym.', f'y = {sp.latex(k_sym)}'),
             ],
             'coefficients': [
                 ('a', _fv(a)), ('h', _fv(h)), ('k', _fv(k)),
@@ -1158,6 +1201,7 @@ class EquationAnalyzer:
             ],
             'features': features, 'asymptotes': [],
             'directrix': ('x', h - p),
+            'axis_of_symmetry': ('y', k),
         }
 
     @staticmethod
@@ -1730,6 +1774,19 @@ class GraphCalcApp:
                                linewidth=1.4, alpha=0.7, zorder=4)
             except Exception:
                 pass
+        # Axis of symmetry (parabola)
+        aos = analysis.get('axis_of_symmetry')
+        if aos:
+            try:
+                axis, val = aos
+                if axis == 'x':
+                    ax.axvline(float(val), color=eq.color, linestyle='--',
+                               linewidth=1.2, alpha=0.55, zorder=4)
+                else:
+                    ax.axhline(float(val), color=eq.color, linestyle='--',
+                               linewidth=1.2, alpha=0.55, zorder=4)
+            except Exception:
+                pass
 
     def _get_analysis(self, eq):
         key = id(eq)
@@ -1805,12 +1862,14 @@ class GraphCalcApp:
         # group by label for compactness
         grouped = {}
         order = []
-        for label, x, y, kind in feats:
+        for feat in feats:
+            label, x, y, kind = feat[0], feat[1], feat[2], feat[3]
+            exact = feat[4] if len(feat) > 4 else None
             key = (label, kind)
             if key not in grouped:
                 grouped[key] = []
                 order.append(key)
-            grouped[key].append((x, y))
+            grouped[key].append((x, y, exact))
         for key in order:
             label, kind = key
             row = document.createElement('div')
@@ -1820,10 +1879,31 @@ class GraphCalcApp:
             dot.style.background = eq.color
             row.appendChild(dot)
             pts = grouped[key]
-            pts_str = ', '.join(f'({_fc(x)}, {_fc(y)})' for x, y in pts)
-            text = document.createElement('span')
-            text.textContent = f'{label}: {pts_str}'
-            row.appendChild(text)
+            use_exact = any(p[2] is not None for p in pts)
+            if use_exact:
+                lbl_span = document.createElement('span')
+                lbl_span.textContent = f'{label}: '
+                row.appendChild(lbl_span)
+                for i, (x, y, exact) in enumerate(pts):
+                    if i > 0:
+                        sep = document.createElement('span')
+                        sep.textContent = ', '
+                        row.appendChild(sep)
+                    pt_span = document.createElement('span')
+                    row.appendChild(pt_span)
+                    if exact is not None:
+                        try:
+                            window.katex.render(f'x = {exact}', pt_span, window.Object.fromEntries(
+                                [['throwOnError', False], ['displayMode', False]]))
+                        except Exception:
+                            pt_span.textContent = f'({_fc(x)}, 0)'
+                    else:
+                        pt_span.textContent = f'({_fc(x)}, {_fc(y)})'
+            else:
+                pts_str = ', '.join(f'({_fc(x)}, {_fc(y)})' for x, y, *_ in pts)
+                text = document.createElement('span')
+                text.textContent = f'{label}: {pts_str}'
+                row.appendChild(text)
             feats_div.appendChild(row)
 
         panel.classList.add('visible')
