@@ -262,6 +262,42 @@
     text-align: right;
     flex-shrink: 0;
   }
+  #zoom-controls {
+    position: absolute;
+    bottom: 18px;
+    right: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    z-index: 6;
+  }
+  #zoom-controls button {
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: rgba(22, 33, 62, 0.82);
+    color: var(--text-primary);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    user-select: none;
+    backdrop-filter: blur(6px);
+    transition: background 0.12s, border-color 0.12s;
+  }
+  #zoom-controls button:hover {
+    background: rgba(50, 60, 110, 0.95);
+    border-color: var(--border-focus);
+  }
+  #zoom-controls button:active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  #zoom-reset-btn { font-size: 16px; }
 </style>
 <py-config>
   packages = ["numpy", "sympy", "matplotlib"]
@@ -477,6 +513,11 @@
 
 <div id="graph-container">
   <canvas id="graph-canvas" width="800" height="500"></canvas>
+  <div id="zoom-controls">
+    <button id="zoom-in-btn" title="Zoom in (+)">+</button>
+    <button id="zoom-out-btn" title="Zoom out (−)">−</button>
+    <button id="zoom-reset-btn" title="Reset view">⌂</button>
+  </div>
   <div id="info-panel">
     <div class="info-header">
       <span class="info-name" id="info-name"></span>
@@ -1734,11 +1775,27 @@ class GraphCalcApp:
             cx = (self.x_min + self.x_max) / 2
         if cy is None:
             cy = (self.y_min + self.y_max) / 2
-        dx = (self.x_max - self.x_min) / 2 * factor
-        dy = (self.y_max - self.y_min) / 2 * factor
-        self.x_min, self.x_max = cx - dx, cx + dx
-        self.y_min, self.y_max = cy - dy, cy + dy
+        self.x_min = cx - (cx - self.x_min) * factor
+        self.x_max = cx + (self.x_max - cx) * factor
+        self.y_min = cy - (cy - self.y_min) * factor
+        self.y_max = cy + (self.y_max - cy) * factor
         self.redraw()
+
+    def _px_to_data(self, px, py, cw, ch):
+        """Convert CSS pixel position on the image to graph data coordinates."""
+        if self._axes_box is None:
+            return None, None
+        ax0, ay0, aw, ah = self._axes_box
+        ax_px0 = ax0 * cw
+        ay_px0 = ay0 * ch
+        ax_pxw = aw * cw
+        ax_pxh = ah * ch
+        if ax_pxw <= 0 or ax_pxh <= 0:
+            return None, None
+        u = (px - ax_px0) / ax_pxw
+        v = (py - ay_px0) / ax_pxh
+        return (self.x_min + u * (self.x_max - self.x_min),
+                self.y_max - v * (self.y_max - self.y_min))
 
     # ── Selection / analysis ────────────────────────────────────────────────
 
@@ -2105,7 +2162,16 @@ def on_keydown(event):
 
 def on_wheel(event):
     event.preventDefault()
-    factor = 1.15 if event.deltaY < 0 else 1 / 1.15
+    # scroll up (deltaY < 0) → zoom in (factor < 1 shrinks the view)
+    factor = 1 / 1.12 if event.deltaY < 0 else 1.12
+    img = document.getElementById('graph-img')
+    if img is not None:
+        rect = img.getBoundingClientRect()
+        cx, cy = app._px_to_data(event.clientX - rect.left, event.clientY - rect.top,
+                                  rect.width, rect.height)
+        if cx is not None:
+            app.zoom(factor, cx, cy)
+            return
     app.zoom(factor)
 
 def _hide_info_panel():
@@ -2153,6 +2219,31 @@ def on_click(event):
 def on_info_close(event):
     app.deselect()
 
+def on_zoom_in(event):
+    app.zoom(1 / 1.4)
+
+def on_zoom_out(event):
+    app.zoom(1.4)
+
+def on_zoom_reset(event):
+    if app.equations:
+        app._auto_fit()
+    else:
+        app.x_min, app.x_max = -10.0, 10.0
+        app.y_min, app.y_max = -10.0, 10.0
+    app.redraw()
+
+def on_window_keydown(event):
+    inp = document.getElementById('eq-input')
+    if document.activeElement is inp:
+        return
+    if event.key in ('+', '='):
+        event.preventDefault()
+        app.zoom(1 / 1.3)
+    elif event.key == '-':
+        event.preventDefault()
+        app.zoom(1.3)
+
 def on_equal_toggle(event):
     app._equal_axis = not app._equal_axis
     btn = document.getElementById('equal-toggle')
@@ -2199,7 +2290,18 @@ def on_touchmove(event):
         t = event.touches
         dist = ((t[0].clientX - t[1].clientX)**2 + (t[0].clientY - t[1].clientY)**2)**0.5
         if _touch_dist[0] > 0:
-            ratio = _touch_dist[0] / dist
+            ratio = _touch_dist[0] / dist  # ratio > 1 → pinch closed → zoom out
+            mid_x = (t[0].clientX + t[1].clientX) / 2
+            mid_y = (t[0].clientY + t[1].clientY) / 2
+            img = document.getElementById('graph-img')
+            if img is not None:
+                rect = img.getBoundingClientRect()
+                cx, cy = app._px_to_data(mid_x - rect.left, mid_y - rect.top,
+                                          rect.width, rect.height)
+                if cx is not None:
+                    app.zoom(ratio, cx, cy)
+                    _touch_dist[0] = dist
+                    return
             app.zoom(ratio)
         _touch_dist[0] = dist
 
@@ -2214,6 +2316,10 @@ _touchmove_proxy = create_proxy(on_touchmove)
 _graph_click_proxy = create_proxy(on_graph_click)
 _info_close_proxy = create_proxy(on_info_close)
 _equal_toggle_proxy = create_proxy(on_equal_toggle)
+_zoom_in_proxy = create_proxy(on_zoom_in)
+_zoom_out_proxy = create_proxy(on_zoom_out)
+_zoom_reset_proxy = create_proxy(on_zoom_reset)
+_window_keydown_proxy = create_proxy(on_window_keydown)
 
 inp_el = document.getElementById('eq-input')
 inp_el.addEventListener('keydown', _enter_proxy)
@@ -2229,6 +2335,10 @@ container.addEventListener('click', _graph_click_proxy)
 document.getElementById('eq-list').addEventListener('click', _click_proxy)
 document.getElementById('info-close').addEventListener('click', _info_close_proxy)
 document.getElementById('equal-toggle').addEventListener('click', _equal_toggle_proxy)
+document.getElementById('zoom-in-btn').addEventListener('click', _zoom_in_proxy)
+document.getElementById('zoom-out-btn').addEventListener('click', _zoom_out_proxy)
+document.getElementById('zoom-reset-btn').addEventListener('click', _zoom_reset_proxy)
+window.addEventListener('keydown', _window_keydown_proxy)
 
 # Resize handler
 def on_resize(event=None):
@@ -2239,7 +2349,7 @@ window.addEventListener('resize', _resize_proxy)
 
 # Initial draw
 document.getElementById('loading-screen').classList.add('hidden')
-set_status("Type an equation: y = x^2  |  x^2 + y^2 = 25  |  clear  |  undo  |  scroll to zoom")
+set_status("Type an equation: y = x^2  |  x^2 + y^2 = 25  |  clear  |  undo  |  scroll/pinch to zoom  |  +/− keys")
 app.redraw()
 document.getElementById('eq-input').focus()
 </script>
