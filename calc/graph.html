@@ -1564,8 +1564,8 @@ class GraphCalcApp:
         else:
             x_center = 0.0
             x_half = 10.0
-        cand_x_min = x_center - x_half
-        cand_x_max = x_center + x_half
+        cand_x_min = min(x_center - x_half, 0)
+        cand_x_max = max(x_center + x_half, 0)
         eval_x = np.linspace(cand_x_min, cand_x_max, 4000)
         all_y = []
         for eq in explicit:
@@ -1585,7 +1585,7 @@ class GraphCalcApp:
             y_center = 0.0
             y_half = 10.0
         self.x_min, self.x_max = _nice_bounds(cand_x_min, cand_x_max)
-        self.y_min, self.y_max = _nice_bounds(y_center - y_half, y_center + y_half)
+        self.y_min, self.y_max = _nice_bounds(min(y_center - y_half, 0), max(y_center + y_half, 0))
 
     # ── Input dispatch ──────────────────────────────────────────────────────
 
