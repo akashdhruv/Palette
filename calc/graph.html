@@ -298,6 +298,68 @@
     border-color: var(--accent);
   }
   #zoom-reset-btn { font-size: 16px; }
+  #window-btn { font-size: 15px; }
+  #window-panel {
+    position: absolute;
+    bottom: 18px;
+    right: 58px;
+    background: rgba(22, 33, 62, 0.96);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px 11px;
+    font-size: 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    z-index: 6;
+    display: none;
+    backdrop-filter: blur(6px);
+    min-width: 158px;
+  }
+  #window-panel.visible { display: block; }
+  #window-panel .win-title {
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 7px;
+  }
+  .win-grid {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 4px 6px;
+    align-items: center;
+  }
+  .win-label {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-align: right;
+  }
+  .win-input {
+    padding: 3px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: rgba(0,0,0,0.3);
+    color: var(--text-primary);
+    font-size: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+  }
+  .win-input:focus { outline: none; border-color: var(--border-focus); }
+  #window-apply-btn {
+    margin-top: 7px;
+    width: 100%;
+    padding: 4px;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  #window-apply-btn:hover { opacity: 0.85; }
 </style>
 <py-config>
   packages = ["numpy", "sympy", "matplotlib"]
@@ -517,6 +579,7 @@
     <button id="zoom-in-btn" title="Zoom in (+)">+</button>
     <button id="zoom-out-btn" title="Zoom out (−)">−</button>
     <button id="zoom-reset-btn" title="Reset view">⌂</button>
+    <button id="window-btn" title="Set window bounds (xmin / xmax / ymin / ymax)">⊡</button>
   </div>
   <div id="info-panel">
     <div class="info-header">
@@ -531,6 +594,16 @@
     <div class="info-features" id="info-features"></div>
     <div class="info-section-label" id="info-cheatsheet-label">Formulas</div>
     <div class="info-cheatsheet" id="info-cheatsheet"></div>
+  </div>
+  <div id="window-panel">
+    <div class="win-title">Window</div>
+    <div class="win-grid">
+      <span class="win-label">xmin</span><input class="win-input" id="win-xmin" type="number" step="any">
+      <span class="win-label">xmax</span><input class="win-input" id="win-xmax" type="number" step="any">
+      <span class="win-label">ymin</span><input class="win-input" id="win-ymin" type="number" step="any">
+      <span class="win-label">ymax</span><input class="win-input" id="win-ymax" type="number" step="any">
+    </div>
+    <button id="window-apply-btn">Apply</button>
   </div>
 </div>
 <div id="eq-list"></div>
@@ -1813,7 +1886,8 @@ class GraphCalcApp:
         """Draw analysis features for the selected equation."""
         analysis = self._get_analysis(eq)
         # Curve features
-        for label, x, y, kind in analysis.get('features', []):
+        for feat in analysis.get('features', []):
+            label, x, y, kind = feat[0], feat[1], feat[2], feat[3]
             if not (self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max):
                 continue
             style = self.MARKER_STYLES.get(kind, self.MARKER_STYLES['intercept'])
@@ -2239,6 +2313,13 @@ def on_graph_click(event):
             return
     except Exception:
         pass
+    try:
+        for _ctrl_id in ('zoom-controls', 'window-panel'):
+            ctrl = document.getElementById(_ctrl_id)
+            if ctrl is not None and ctrl.contains(target):
+                return
+    except Exception:
+        pass
     img = document.getElementById('graph-img')
     if img is None:
         return
@@ -2253,6 +2334,48 @@ def on_graph_click(event):
             app.deselect()
 
 
+def _open_window_panel():
+    document.getElementById('win-xmin').value = str(app.x_min)
+    document.getElementById('win-xmax').value = str(app.x_max)
+    document.getElementById('win-ymin').value = str(app.y_min)
+    document.getElementById('win-ymax').value = str(app.y_max)
+    document.getElementById('window-panel').classList.add('visible')
+
+def _apply_window():
+    try:
+        xmin = float(document.getElementById('win-xmin').value)
+        xmax = float(document.getElementById('win-xmax').value)
+        ymin = float(document.getElementById('win-ymin').value)
+        ymax = float(document.getElementById('win-ymax').value)
+        if xmin >= xmax:
+            set_status('Error: xmin must be less than xmax.')
+            return
+        if ymin >= ymax:
+            set_status('Error: ymin must be less than ymax.')
+            return
+        app._save_snapshot()
+        app.x_min, app.x_max = xmin, xmax
+        app.y_min, app.y_max = ymin, ymax
+        document.getElementById('window-panel').classList.remove('visible')
+        set_status(f'Window: x=[{xmin:g}, {xmax:g}]  y=[{ymin:g}, {ymax:g}]')
+        app.redraw()
+    except Exception as exc:
+        set_status(f'Window error: {exc}')
+
+def on_window_btn(event):
+    panel = document.getElementById('window-panel')
+    if panel.classList.contains('visible'):
+        panel.classList.remove('visible')
+    else:
+        _open_window_panel()
+
+def on_window_apply(event):
+    _apply_window()
+
+def on_window_keydown(event):
+    if event.key == 'Enter':
+        _apply_window()
+
 # Bind events
 _enter_proxy = create_proxy(on_enter)
 _keydown_proxy = create_proxy(on_keydown)
@@ -2264,6 +2387,9 @@ _equal_toggle_proxy = create_proxy(on_equal_toggle)
 _zoom_in_proxy = create_proxy(on_zoom_in)
 _zoom_out_proxy = create_proxy(on_zoom_out)
 _zoom_reset_proxy = create_proxy(on_zoom_reset)
+_window_btn_proxy = create_proxy(on_window_btn)
+_window_apply_proxy = create_proxy(on_window_apply)
+_window_keydown_proxy = create_proxy(on_window_keydown)
 
 inp_el = document.getElementById('eq-input')
 inp_el.addEventListener('keydown', _enter_proxy)
@@ -2279,6 +2405,10 @@ document.getElementById('equal-toggle').addEventListener('click', _equal_toggle_
 document.getElementById('zoom-in-btn').addEventListener('click', _zoom_in_proxy)
 document.getElementById('zoom-out-btn').addEventListener('click', _zoom_out_proxy)
 document.getElementById('zoom-reset-btn').addEventListener('click', _zoom_reset_proxy)
+document.getElementById('window-btn').addEventListener('click', _window_btn_proxy)
+document.getElementById('window-apply-btn').addEventListener('click', _window_apply_proxy)
+for _win_id in ['win-xmin', 'win-xmax', 'win-ymin', 'win-ymax']:
+    document.getElementById(_win_id).addEventListener('keydown', _window_keydown_proxy)
 
 # Resize handler
 def on_resize(event=None):
