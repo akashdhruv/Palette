@@ -2160,19 +2160,6 @@ def on_keydown(event):
             app._hpos = len(app._history)
             inp.value = ''
 
-def on_wheel(event):
-    event.preventDefault()
-    # scroll up (deltaY < 0) → zoom in (factor < 1 shrinks the view)
-    factor = 1 / 1.12 if event.deltaY < 0 else 1.12
-    img = document.getElementById('graph-img')
-    if img is not None:
-        rect = img.getBoundingClientRect()
-        cx, cy = app._px_to_data(event.clientX - rect.left, event.clientY - rect.top,
-                                  rect.width, rect.height)
-        if cx is not None:
-            app.zoom(factor, cx, cy)
-            return
-    app.zoom(factor)
 
 def _hide_info_panel():
     panel = document.getElementById('info-panel')
@@ -2233,16 +2220,6 @@ def on_zoom_reset(event):
         app.y_min, app.y_max = -10.0, 10.0
     app.redraw()
 
-def on_window_keydown(event):
-    inp = document.getElementById('eq-input')
-    if document.activeElement is inp:
-        return
-    if event.key in ('+', '='):
-        event.preventDefault()
-        app.zoom(1 / 1.3)
-    elif event.key == '-':
-        event.preventDefault()
-        app.zoom(1.3)
 
 def on_equal_toggle(event):
     app._equal_axis = not app._equal_axis
@@ -2275,51 +2252,18 @@ def on_graph_click(event):
         if app.selected is not None:
             app.deselect()
 
-# Touch zoom support
-_touch_dist = [0.0]
-
-def on_touchstart(event):
-    if event.touches.length == 2:
-        event.preventDefault()
-        t = event.touches
-        _touch_dist[0] = ((t[0].clientX - t[1].clientX)**2 + (t[0].clientY - t[1].clientY)**2)**0.5
-
-def on_touchmove(event):
-    if event.touches.length == 2:
-        event.preventDefault()
-        t = event.touches
-        dist = ((t[0].clientX - t[1].clientX)**2 + (t[0].clientY - t[1].clientY)**2)**0.5
-        if _touch_dist[0] > 0:
-            ratio = _touch_dist[0] / dist  # ratio > 1 → pinch closed → zoom out
-            mid_x = (t[0].clientX + t[1].clientX) / 2
-            mid_y = (t[0].clientY + t[1].clientY) / 2
-            img = document.getElementById('graph-img')
-            if img is not None:
-                rect = img.getBoundingClientRect()
-                cx, cy = app._px_to_data(mid_x - rect.left, mid_y - rect.top,
-                                          rect.width, rect.height)
-                if cx is not None:
-                    app.zoom(ratio, cx, cy)
-                    _touch_dist[0] = dist
-                    return
-            app.zoom(ratio)
-        _touch_dist[0] = dist
 
 # Bind events
 _enter_proxy = create_proxy(on_enter)
 _keydown_proxy = create_proxy(on_keydown)
 _input_proxy = create_proxy(on_input)
-_wheel_proxy = create_proxy(on_wheel)
 _click_proxy = create_proxy(on_click)
-_touchstart_proxy = create_proxy(on_touchstart)
-_touchmove_proxy = create_proxy(on_touchmove)
 _graph_click_proxy = create_proxy(on_graph_click)
 _info_close_proxy = create_proxy(on_info_close)
 _equal_toggle_proxy = create_proxy(on_equal_toggle)
 _zoom_in_proxy = create_proxy(on_zoom_in)
 _zoom_out_proxy = create_proxy(on_zoom_out)
 _zoom_reset_proxy = create_proxy(on_zoom_reset)
-_window_keydown_proxy = create_proxy(on_window_keydown)
 
 inp_el = document.getElementById('eq-input')
 inp_el.addEventListener('keydown', _enter_proxy)
@@ -2327,9 +2271,6 @@ inp_el.addEventListener('keydown', _keydown_proxy)
 inp_el.addEventListener('input', _input_proxy)
 
 container = document.getElementById('graph-container')
-container.addEventListener('wheel', _wheel_proxy)
-container.addEventListener('touchstart', _touchstart_proxy)
-container.addEventListener('touchmove', _touchmove_proxy)
 container.addEventListener('click', _graph_click_proxy)
 
 document.getElementById('eq-list').addEventListener('click', _click_proxy)
@@ -2338,7 +2279,6 @@ document.getElementById('equal-toggle').addEventListener('click', _equal_toggle_
 document.getElementById('zoom-in-btn').addEventListener('click', _zoom_in_proxy)
 document.getElementById('zoom-out-btn').addEventListener('click', _zoom_out_proxy)
 document.getElementById('zoom-reset-btn').addEventListener('click', _zoom_reset_proxy)
-window.addEventListener('keydown', _window_keydown_proxy)
 
 # Resize handler
 def on_resize(event=None):
@@ -2349,7 +2289,7 @@ window.addEventListener('resize', _resize_proxy)
 
 # Initial draw
 document.getElementById('loading-screen').classList.add('hidden')
-set_status("Type an equation: y = x^2  |  x^2 + y^2 = 25  |  clear  |  undo  |  scroll/pinch to zoom  |  +/− keys")
+set_status("Type an equation: y = x^2  |  x^2 + y^2 = 25  |  clear  |  undo  |  use +/− buttons to zoom")
 app.redraw()
 document.getElementById('eq-input').focus()
 </script>
