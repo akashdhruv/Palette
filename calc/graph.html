@@ -1374,6 +1374,7 @@ class GraphCalcApp:
         self._render_size = (0, 0)  # (cw_css, ch_css)
         self._analysis_cache = {}
         self._equal_axis = False
+        self._user_set_bounds = False  # True after any manual bound change; suppresses auto-fit
 
     def _next_name(self):
         used = {e.name for e in self.equations}
@@ -1663,11 +1664,21 @@ class GraphCalcApp:
                     pass
         return pts
 
+    def _canvas_aspect(self):
+        """Return width/height pixel ratio of the graph container."""
+        container = document.getElementById('graph-container')
+        cw = max(container.clientWidth - 12, 100)
+        ch = max(container.clientHeight - 12, 100)
+        return cw / ch
+
     def _auto_fit(self):
+        aspect = self._canvas_aspect()  # width / height
         explicit = [e for e in self.equations if not e.implicit]
         if not explicit:
-            self.x_min, self.x_max = -10.0, 10.0
-            self.y_min, self.y_max = -10.0, 10.0
+            x_span = 20.0
+            y_span = x_span / aspect
+            self.x_min, self.x_max = -x_span / 2, x_span / 2
+            self.y_min, self.y_max = -y_span / 2, y_span / 2
             return
         wide_x = np.linspace(-100.0, 100.0, 40001)
         intersect_pts = self._find_all_intersections(wide_x, explicit)
@@ -1694,11 +1705,14 @@ class GraphCalcApp:
             y_lo = float(np.percentile(combined, 2))
             y_hi = float(np.percentile(combined, 98))
             y_center = (y_lo + y_hi) / 2
-            y_half = max((y_hi - y_lo) / 2, 2.0) * 1.4
+            y_half_data = max((y_hi - y_lo) / 2, 2.0) * 1.4
         else:
             y_center = 0.0
-            y_half = 10.0
+            y_half_data = 10.0
         self.x_min, self.x_max = _nice_bounds(cand_x_min, cand_x_max)
+        # Scale y to match window aspect ratio; expand only if data needs more room
+        x_span = self.x_max - self.x_min
+        y_half = max(x_span / aspect / 2, y_half_data)
         self.y_min, self.y_max = _nice_bounds(min(y_center - y_half, 0), max(y_center + y_half, 0))
 
     # ── Input dispatch ──────────────────────────────────────────────────────
@@ -1725,7 +1739,6 @@ class GraphCalcApp:
             self.equations = [e for e in self.equations if e.name != name]
             msg = f'Removed {name}.' if len(self.equations) < before else f'{name} not found.'
             set_status(msg)
-            self._auto_fit()
             self.redraw()
             return
 
@@ -1740,6 +1753,7 @@ class GraphCalcApp:
                 elif attr == 'xmax': self.x_max = val
                 elif attr == 'ymin': self.y_min = val
                 else: self.y_max = val
+                self._user_set_bounds = True
                 set_status(f'{attr} = {val}')
                 self.redraw()
             except Exception:
@@ -1780,12 +1794,14 @@ class GraphCalcApp:
             expr_str = raw.replace('^', '**')
             self._save_snapshot()
             sym_expr = sp.sympify(expr_str, locals={'x': _X, 'e': sp.E, 'pi': sp.pi})
+            n_before = len([e for e in self.equations if e.name != name])
             self.equations = [e for e in self.equations if e.name != name]
             color = COLORS[len(self.equations) % len(COLORS)]
             self.equations.append(Equation(name, raw, sym_expr, color))
             n = len(self.equations)
             set_status(f"Plotted y = {raw}  ({'1 equation' if n == 1 else f'{n} equations'})")
-            self._auto_fit()
+            if not self._user_set_bounds and n_before == 0:
+                self._auto_fit()
             self.redraw()
         except Exception as exc:
             set_status(f'Error: {exc}')
@@ -1797,6 +1813,7 @@ class GraphCalcApp:
             rhs_expr = sp.sympify(rhs_str.replace('^', '**'), locals=locals_dict)
             implicit_expr = lhs_expr - rhs_expr
             self._save_snapshot()
+            n_before = len(self.equations)
             name = self._next_name()
             color = COLORS[len(self.equations) % len(COLORS)]
             self.equations.append(Equation(
@@ -1805,7 +1822,8 @@ class GraphCalcApp:
             ))
             n = len(self.equations)
             set_status(f"Plotted {lhs_str} = {rhs_str}  ({'1 equation' if n == 1 else f'{n} equations'})")
-            self._auto_fit()
+            if not self._user_set_bounds and n_before == 0:
+                self._auto_fit()
             self.redraw()
         except Exception as exc:
             set_status(f'Error: {exc}')
@@ -1852,6 +1870,7 @@ class GraphCalcApp:
         self.x_max = cx + (self.x_max - cx) * factor
         self.y_min = cy - (cy - self.y_min) * factor
         self.y_max = cy + (self.y_max - cy) * factor
+        self._user_set_bounds = True
         self.redraw()
 
     def _px_to_data(self, px, py, cw, ch):
@@ -2258,7 +2277,6 @@ def on_click(event):
                     app.selected = None
                     _hide_info_panel()
                 set_status(f'Removed {name}.')
-                app._auto_fit()
                 app.redraw()
         return
     # Pill click → toggle analysis for that equation
@@ -2287,11 +2305,8 @@ def on_zoom_out(event):
     app.zoom(1.4)
 
 def on_zoom_reset(event):
-    if app.equations:
-        app._auto_fit()
-    else:
-        app.x_min, app.x_max = -10.0, 10.0
-        app.y_min, app.y_max = -10.0, 10.0
+    app._user_set_bounds = False
+    app._auto_fit()
     app.redraw()
 
 
@@ -2356,6 +2371,7 @@ def _apply_window():
         app._save_snapshot()
         app.x_min, app.x_max = xmin, xmax
         app.y_min, app.y_max = ymin, ymax
+        app._user_set_bounds = True
         document.getElementById('window-panel').classList.remove('visible')
         set_status(f'Window: x=[{xmin:g}, {xmax:g}]  y=[{ymin:g}, {ymax:g}]')
         app.redraw()
@@ -2417,9 +2433,10 @@ def on_resize(event=None):
 _resize_proxy = create_proxy(on_resize)
 window.addEventListener('resize', _resize_proxy)
 
-# Initial draw
+# Initial draw — set aspect-ratio-aware default bounds before first render
 document.getElementById('loading-screen').classList.add('hidden')
 set_status("Type an equation: y = x^2  |  x^2 + y^2 = 25  |  clear  |  undo  |  use +/− buttons to zoom")
+app._auto_fit()
 app.redraw()
 document.getElementById('eq-input').focus()
 </script>
