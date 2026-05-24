@@ -400,6 +400,59 @@
     font-size: 12px;
     padding: 0 4px;
   }
+  #draw-inputs {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 10px 4px;
+    flex-wrap: wrap;
+  }
+  #draw-inputs.visible { display: flex; }
+  #di-line, #di-para {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .di-label {
+    color: var(--text-dim);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .di-pair {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+  .di-field {
+    width: 52px;
+    padding: 3px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: rgba(0,0,0,0.3);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+    box-sizing: border-box;
+  }
+  .di-field:focus { outline: none; border-color: var(--border-focus); }
+  .di-sep { color: var(--text-dim); font-size: 13px; padding: 0 2px; }
+  .di-btn {
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid #e67e22;
+    background: #e67e22;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    margin-left: 3px;
+  }
+  .di-btn:hover { opacity: 0.85; }
+  #graph-container.draw-active img { cursor: crosshair; }
+  #draw-toggle.active::after { content: ' ●'; font-size: 8px; vertical-align: super; }
 </style>
 <py-config>
   packages = ["numpy", "sympy", "matplotlib"]
@@ -653,6 +706,28 @@
   <span id="draw-hint"></span>
   <button class="draw-sub-btn" id="draw-cancel-btn">✕ Cancel</button>
 </div>
+<div id="draw-inputs">
+  <div id="di-line">
+    <span class="di-label">P1</span>
+    <span class="di-pair">x<input class="di-field" id="di-x1" type="number" step="any" placeholder="0"></span>
+    <span class="di-pair">y<input class="di-field" id="di-y1" type="number" step="any" placeholder="0"></span>
+    <span class="di-sep">·</span>
+    <span class="di-label">P2</span>
+    <span class="di-pair">x<input class="di-field" id="di-x2" type="number" step="any" placeholder="1"></span>
+    <span class="di-pair">y<input class="di-field" id="di-y2" type="number" step="any" placeholder="1"></span>
+    <button id="di-line-plot" class="di-btn">Plot</button>
+  </div>
+  <div id="di-para" style="display:none">
+    <span class="di-label">Vertex</span>
+    <span class="di-pair">x<input class="di-field" id="di-vx" type="number" step="any" placeholder="0"></span>
+    <span class="di-pair">y<input class="di-field" id="di-vy" type="number" step="any" placeholder="0"></span>
+    <span class="di-sep">·</span>
+    <span class="di-label">Point</span>
+    <span class="di-pair">x<input class="di-field" id="di-px" type="number" step="any" placeholder="1"></span>
+    <span class="di-pair">y<input class="di-field" id="di-py" type="number" step="any" placeholder="1"></span>
+    <button id="di-para-plot" class="di-btn">Plot</button>
+  </div>
+</div>
 <div id="preview-bar"></div>
 <div id="input-bar">
   <label for="eq-input">&gt;</label>
@@ -668,6 +743,7 @@ import math
 import re
 import io
 import base64
+from fractions import Fraction
 
 import numpy as np
 import sympy as sp
@@ -779,7 +855,26 @@ def _fv(val):
         return r'\infty' if f > 0 else r'-\infty'
     if abs(f - round(f)) < 1e-10:
         return str(int(round(f)))
+    # Try to express as a simple fraction (denominator ≤ 1000)
+    try:
+        frac = Fraction(f).limit_denominator(1000)
+        if abs(float(frac) - f) < 1e-9:
+            return sp.latex(sp.Rational(frac.numerator, frac.denominator))
+    except Exception:
+        pass
     return f'{f:.4g}'
+
+def _sf(v):
+    """Format a float as an exact fraction string for sympy input, or decimal."""
+    try:
+        frac = Fraction(v).limit_denominator(1000)
+        if abs(float(frac) - v) < 1e-9:
+            if frac.denominator == 1:
+                return str(frac.numerator)
+            return f'{frac.numerator}/{frac.denominator}'
+    except Exception:
+        pass
+    return f'{v:.10g}'
 
 def _real_roots_of(expr, var):
     """Return distinct real roots of expr in var as floats."""
@@ -1781,21 +1876,27 @@ class GraphCalcApp:
         self._draw_mode = mode
         self._draw_points = []
         draw_bar = document.getElementById('draw-bar')
+        di = document.getElementById('draw-inputs')
         toggle_btn = document.getElementById('draw-toggle')
+        container = document.getElementById('graph-container')
         if mode is None:
             draw_bar.classList.remove('visible')
-            if toggle_btn:
-                toggle_btn.classList.remove('active')
+            if di: di.classList.remove('visible')
+            if toggle_btn: toggle_btn.classList.remove('active')
+            if container: container.classList.remove('draw-active')
         else:
             draw_bar.classList.add('visible')
-            if toggle_btn:
-                toggle_btn.classList.add('active')
+            if di: di.classList.add('visible')
+            if toggle_btn: toggle_btn.classList.add('active')
+            if container: container.classList.add('draw-active')
             lb = document.getElementById('draw-line-btn')
             pb = document.getElementById('draw-para-btn')
-            if lb:
-                lb.classList.toggle('active', mode == 'line')
-            if pb:
-                pb.classList.toggle('active', mode == 'parabola')
+            if lb: lb.classList.toggle('active', mode == 'line')
+            if pb: pb.classList.toggle('active', mode == 'parabola')
+            di_line = document.getElementById('di-line')
+            di_para = document.getElementById('di-para')
+            if di_line: di_line.style.display = 'flex' if mode == 'line' else 'none'
+            if di_para: di_para.style.display = 'flex' if mode == 'parabola' else 'none'
         self._update_draw_hint()
         self.redraw()
 
@@ -1836,10 +1937,6 @@ class GraphCalcApp:
             return
         m = (y2 - y1) / (x2 - x1)
         c = y1 - m * x1
-        def _sf(v):
-            if abs(v - round(v)) < 1e-9:
-                return str(int(round(v)))
-            return f'{v:.8g}'
         raw = f'({_sf(m)})*x + ({_sf(c)})'
         self._update_draw_hint()
         self._add_eq(self._next_name(), raw)
@@ -1853,13 +1950,40 @@ class GraphCalcApp:
             self.redraw()
             return
         a = (py - vy) / (px - vx) ** 2
-        def _sf(v):
-            if abs(v - round(v)) < 1e-9:
-                return str(int(round(v)))
-            return f'{v:.8g}'
         raw = f'({_sf(a)})*(x - ({_sf(vx)}))^2 + ({_sf(vy)})'
         self._update_draw_hint()
         self._add_eq(self._next_name(), raw)
+
+    def _plot_line_from_inputs(self):
+        try:
+            x1 = float(document.getElementById('di-x1').value)
+            y1 = float(document.getElementById('di-y1').value)
+            x2 = float(document.getElementById('di-x2').value)
+            y2 = float(document.getElementById('di-y2').value)
+        except Exception:
+            set_status('Enter valid numbers for both points.')
+            return
+        if abs(x2 - x1) < 1e-10:
+            set_status('Cannot draw vertical line (x1 = x2).')
+            return
+        m = (y2 - y1) / (x2 - x1)
+        c = y1 - m * x1
+        self._add_eq(self._next_name(), f'({_sf(m)})*x + ({_sf(c)})')
+
+    def _plot_para_from_inputs(self):
+        try:
+            vx = float(document.getElementById('di-vx').value)
+            vy = float(document.getElementById('di-vy').value)
+            px = float(document.getElementById('di-px').value)
+            py = float(document.getElementById('di-py').value)
+        except Exception:
+            set_status('Enter valid numbers for vertex and point.')
+            return
+        if abs(px - vx) < 1e-10:
+            set_status('Point must differ from vertex horizontally.')
+            return
+        a = (py - vy) / (px - vx) ** 2
+        self._add_eq(self._next_name(), f'({_sf(a)})*(x - ({_sf(vx)}))^2 + ({_sf(vy)})')
 
     # ── Input dispatch ──────────────────────────────────────────────────────
 
@@ -2471,6 +2595,19 @@ def on_global_keydown(event):
     if event.key == 'Escape' and app._draw_mode is not None:
         app._set_draw_mode(None)
 
+def on_di_line_plot(event):
+    app._plot_line_from_inputs()
+
+def on_di_para_plot(event):
+    app._plot_para_from_inputs()
+
+def on_di_keydown(event):
+    if event.key == 'Enter':
+        if app._draw_mode == 'line':
+            app._plot_line_from_inputs()
+        elif app._draw_mode == 'parabola':
+            app._plot_para_from_inputs()
+
 
 def on_equal_toggle(event):
     app._equal_axis = not app._equal_axis
@@ -2601,6 +2738,14 @@ document.getElementById('draw-line-btn').addEventListener('click', _draw_line_pr
 document.getElementById('draw-para-btn').addEventListener('click', _draw_para_proxy)
 document.getElementById('draw-cancel-btn').addEventListener('click', _draw_cancel_proxy)
 document.addEventListener('keydown', _global_keydown_proxy)
+
+_di_line_plot_proxy = create_proxy(on_di_line_plot)
+_di_para_plot_proxy = create_proxy(on_di_para_plot)
+_di_keydown_proxy = create_proxy(on_di_keydown)
+document.getElementById('di-line-plot').addEventListener('click', _di_line_plot_proxy)
+document.getElementById('di-para-plot').addEventListener('click', _di_para_plot_proxy)
+for _di_id in ['di-x1', 'di-y1', 'di-x2', 'di-y2', 'di-vx', 'di-vy', 'di-px', 'di-py']:
+    document.getElementById(_di_id).addEventListener('keydown', _di_keydown_proxy)
 
 # Resize handler
 def on_resize(event=None):
