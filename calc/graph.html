@@ -360,6 +360,46 @@
     font-family: inherit;
   }
   #window-apply-btn:hover { opacity: 0.85; }
+  #draw-toggle {
+    flex: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+  }
+  #draw-toggle:hover { color: var(--text-primary); border-color: var(--border-focus); }
+  #draw-toggle.active { background: #e67e22; color: #fff; border-color: #e67e22; }
+  #draw-bar {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px 3px;
+  }
+  #draw-bar.visible { display: flex; }
+  .draw-sub-btn {
+    padding: 3px 11px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .draw-sub-btn:hover { color: var(--text-primary); border-color: var(--border-focus); }
+  .draw-sub-btn.active { background: #e67e22; color: #fff; border-color: #e67e22; }
+  #draw-hint {
+    flex: 1;
+    color: var(--text-dim);
+    font-size: 12px;
+    padding: 0 4px;
+  }
 </style>
 <py-config>
   packages = ["numpy", "sympy", "matplotlib"]
@@ -607,11 +647,18 @@
   </div>
 </div>
 <div id="eq-list"></div>
+<div id="draw-bar">
+  <button class="draw-sub-btn" id="draw-line-btn">Line</button>
+  <button class="draw-sub-btn" id="draw-para-btn">Parabola</button>
+  <span id="draw-hint"></span>
+  <button class="draw-sub-btn" id="draw-cancel-btn">✕ Cancel</button>
+</div>
 <div id="preview-bar"></div>
 <div id="input-bar">
   <label for="eq-input">&gt;</label>
   <input id="eq-input" type="text" placeholder="y = x^2  or  x^2+y^2 = 25  or  clear" autocomplete="off" autocapitalize="off" spellcheck="false">
   <button id="equal-toggle" type="button" title="Toggle equal aspect ratio">1:1</button>
+  <button id="draw-toggle" type="button" title="Draw curves by clicking points on the graph">✏</button>
 </div>
 <div id="status-bar">Loading...</div>
 
@@ -1375,6 +1422,8 @@ class GraphCalcApp:
         self._analysis_cache = {}
         self._equal_axis = False
         self._user_set_bounds = False  # True after any manual bound change; suppresses auto-fit
+        self._draw_mode = None        # None | 'line' | 'parabola'
+        self._draw_points = []        # collected (x, y) data-space points
 
     def _next_name(self):
         used = {e.name for e in self.equations}
@@ -1487,6 +1536,16 @@ class GraphCalcApp:
         if legend_handles:
             ax.legend(handles=legend_handles, loc='upper right', fontsize=max(9, tick_size),
                       framealpha=0.92, facecolor='white', edgecolor='#bbbbbb', borderpad=0.6)
+
+        # Draw mode: show collected points as orange markers
+        for i, (pdx, pdy) in enumerate(self._draw_points):
+            lbl = ('vertex' if self._draw_mode == 'parabola' and i == 0 else f'P{i + 1}')
+            ax.plot(pdx, pdy, 'o', color='#e67e22', markersize=10, zorder=12,
+                    markeredgecolor='#ffffff', markeredgewidth=1.5)
+            ax.annotate(lbl, xy=(pdx, pdy), xytext=(9, 9),
+                        textcoords='offset points', fontsize=tick_size, color='#e67e22',
+                        bbox=dict(boxstyle='round,pad=0.25', fc='white', alpha=0.9,
+                                  ec='#e67e22', lw=0.8), zorder=13)
 
         fig.tight_layout(pad=0.6)
         # Capture axes geometry for click→data mapping (CSS coords, top-down)
@@ -1714,6 +1773,93 @@ class GraphCalcApp:
         x_span = self.x_max - self.x_min
         y_half = max(x_span / aspect / 2, y_half_data)
         self.y_min, self.y_max = _nice_bounds(min(y_center - y_half, 0), max(y_center + y_half, 0))
+
+    # ── Draw mode ────────────────────────────────────────────────────────────
+
+    def _set_draw_mode(self, mode):
+        """Activate or deactivate point-draw mode. mode: None | 'line' | 'parabola'"""
+        self._draw_mode = mode
+        self._draw_points = []
+        draw_bar = document.getElementById('draw-bar')
+        toggle_btn = document.getElementById('draw-toggle')
+        if mode is None:
+            draw_bar.classList.remove('visible')
+            if toggle_btn:
+                toggle_btn.classList.remove('active')
+        else:
+            draw_bar.classList.add('visible')
+            if toggle_btn:
+                toggle_btn.classList.add('active')
+            lb = document.getElementById('draw-line-btn')
+            pb = document.getElementById('draw-para-btn')
+            if lb:
+                lb.classList.toggle('active', mode == 'line')
+            if pb:
+                pb.classList.toggle('active', mode == 'parabola')
+        self._update_draw_hint()
+        self.redraw()
+
+    def _update_draw_hint(self):
+        hint = document.getElementById('draw-hint')
+        if hint is None:
+            return
+        n = len(self._draw_points)
+        if self._draw_mode == 'line':
+            msgs = ['Click first point on graph', 'Click second point on graph']
+            hint.textContent = msgs[n] if n < 2 else ''
+        elif self._draw_mode == 'parabola':
+            msgs = ['Click vertex on graph', 'Click another point on graph']
+            hint.textContent = msgs[n] if n < 2 else ''
+        else:
+            hint.textContent = ''
+
+    def _handle_draw_click(self, px, py, img_w, img_h):
+        x, y = self._px_to_data(px, py, img_w, img_h)
+        if x is None:
+            return
+        self._draw_points.append((x, y))
+        if self._draw_mode == 'line' and len(self._draw_points) >= 2:
+            self._finish_line()
+        elif self._draw_mode == 'parabola' and len(self._draw_points) >= 2:
+            self._finish_parabola()
+        else:
+            self._update_draw_hint()
+            self.redraw()
+
+    def _finish_line(self):
+        (x1, y1), (x2, y2) = self._draw_points[:2]
+        self._draw_points = []
+        if abs(x2 - x1) < 1e-10:
+            set_status('Cannot draw vertical line (x1 = x2).')
+            self._update_draw_hint()
+            self.redraw()
+            return
+        m = (y2 - y1) / (x2 - x1)
+        c = y1 - m * x1
+        def _sf(v):
+            if abs(v - round(v)) < 1e-9:
+                return str(int(round(v)))
+            return f'{v:.8g}'
+        raw = f'({_sf(m)})*x + ({_sf(c)})'
+        self._update_draw_hint()
+        self._add_eq(self._next_name(), raw)
+
+    def _finish_parabola(self):
+        (vx, vy), (px, py) = self._draw_points[:2]
+        self._draw_points = []
+        if abs(px - vx) < 1e-10:
+            set_status('Second point must differ from vertex horizontally.')
+            self._update_draw_hint()
+            self.redraw()
+            return
+        a = (py - vy) / (px - vx) ** 2
+        def _sf(v):
+            if abs(v - round(v)) < 1e-9:
+                return str(int(round(v)))
+            return f'{v:.8g}'
+        raw = f'({_sf(a)})*(x - ({_sf(vx)}))^2 + ({_sf(vy)})'
+        self._update_draw_hint()
+        self._add_eq(self._next_name(), raw)
 
     # ── Input dispatch ──────────────────────────────────────────────────────
 
@@ -2309,6 +2455,22 @@ def on_zoom_reset(event):
     app._auto_fit()
     app.redraw()
 
+def on_draw_toggle(event):
+    app._set_draw_mode(None if app._draw_mode is not None else 'line')
+
+def on_draw_line(event):
+    app._set_draw_mode('line')
+
+def on_draw_para(event):
+    app._set_draw_mode('parabola')
+
+def on_draw_cancel(event):
+    app._set_draw_mode(None)
+
+def on_global_keydown(event):
+    if event.key == 'Escape' and app._draw_mode is not None:
+        app._set_draw_mode(None)
+
 
 def on_equal_toggle(event):
     app._equal_axis = not app._equal_axis
@@ -2341,6 +2503,9 @@ def on_graph_click(event):
     rect = img.getBoundingClientRect()
     px = event.clientX - rect.left
     py = event.clientY - rect.top
+    if app._draw_mode is not None:
+        app._handle_draw_click(px, py, rect.width, rect.height)
+        return
     eq, dist = app.find_nearest_curve(px, py, rect.width, rect.height)
     if eq is not None and dist <= 12:
         app.select(eq)
@@ -2425,6 +2590,17 @@ document.getElementById('window-btn').addEventListener('click', _window_btn_prox
 document.getElementById('window-apply-btn').addEventListener('click', _window_apply_proxy)
 for _win_id in ['win-xmin', 'win-xmax', 'win-ymin', 'win-ymax']:
     document.getElementById(_win_id).addEventListener('keydown', _window_keydown_proxy)
+
+_draw_toggle_proxy = create_proxy(on_draw_toggle)
+_draw_line_proxy = create_proxy(on_draw_line)
+_draw_para_proxy = create_proxy(on_draw_para)
+_draw_cancel_proxy = create_proxy(on_draw_cancel)
+_global_keydown_proxy = create_proxy(on_global_keydown)
+document.getElementById('draw-toggle').addEventListener('click', _draw_toggle_proxy)
+document.getElementById('draw-line-btn').addEventListener('click', _draw_line_proxy)
+document.getElementById('draw-para-btn').addEventListener('click', _draw_para_proxy)
+document.getElementById('draw-cancel-btn').addEventListener('click', _draw_cancel_proxy)
+document.addEventListener('keydown', _global_keydown_proxy)
 
 # Resize handler
 def on_resize(event=None):
