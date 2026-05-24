@@ -400,59 +400,38 @@
     font-size: 12px;
     padding: 0 4px;
   }
-  #draw-inputs {
+  #point-entry-bar {
     display: none;
     align-items: center;
-    gap: 5px;
-    padding: 2px 10px 4px;
-    flex-wrap: wrap;
+    padding: 4px 8px 6px;
+    gap: 6px;
   }
-  #draw-inputs.visible { display: flex; }
-  #di-line, #di-para {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    flex-wrap: wrap;
+  #point-entry-bar.visible { display: flex; }
+  #point-entry-input {
+    flex: 1;
+    padding: 8px 12px;
   }
-  .di-label {
-    color: var(--text-dim);
-    font-size: 11px;
-    white-space: nowrap;
-  }
-  .di-pair {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    color: var(--text-dim);
-    font-size: 11px;
-  }
-  .di-field {
-    width: 52px;
-    padding: 3px 5px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: rgba(0,0,0,0.3);
-    color: var(--text-primary);
-    font-size: 12px;
-    font-family: inherit;
-    box-sizing: border-box;
-  }
-  .di-field:focus { outline: none; border-color: var(--border-focus); }
-  .di-sep { color: var(--text-dim); font-size: 13px; padding: 0 2px; }
-  .di-btn {
-    padding: 3px 10px;
-    border-radius: 4px;
+  #point-entry-btn {
+    flex: none;
+    padding: 6px 14px;
+    border-radius: 6px;
     border: 1px solid #e67e22;
     background: #e67e22;
     color: #fff;
-    font-size: 12px;
-    cursor: pointer;
     font-family: inherit;
-    margin-left: 3px;
+    font-size: 13px;
+    cursor: pointer;
   }
-  .di-btn:hover { opacity: 0.85; }
+  #point-entry-btn:hover { opacity: 0.85; }
+  #cursor-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+  }
   #graph-container.draw-active img { cursor: crosshair; }
-  #draw-toggle.active::after { content: ' ●'; font-size: 8px; vertical-align: super; }
 </style>
 <py-config>
   packages = ["numpy", "sympy", "matplotlib"]
@@ -668,6 +647,7 @@
 
 <div id="graph-container">
   <canvas id="graph-canvas" width="800" height="500"></canvas>
+  <canvas id="cursor-canvas"></canvas>
   <div id="zoom-controls">
     <button id="zoom-in-btn" title="Zoom in (+)">+</button>
     <button id="zoom-out-btn" title="Zoom out (−)">−</button>
@@ -706,27 +686,10 @@
   <span id="draw-hint"></span>
   <button class="draw-sub-btn" id="draw-cancel-btn">✕ Cancel</button>
 </div>
-<div id="draw-inputs">
-  <div id="di-line">
-    <span class="di-label">P1</span>
-    <span class="di-pair">x<input class="di-field" id="di-x1" type="number" step="any" placeholder="0"></span>
-    <span class="di-pair">y<input class="di-field" id="di-y1" type="number" step="any" placeholder="0"></span>
-    <span class="di-sep">·</span>
-    <span class="di-label">P2</span>
-    <span class="di-pair">x<input class="di-field" id="di-x2" type="number" step="any" placeholder="1"></span>
-    <span class="di-pair">y<input class="di-field" id="di-y2" type="number" step="any" placeholder="1"></span>
-    <button id="di-line-plot" class="di-btn">Plot</button>
-  </div>
-  <div id="di-para" style="display:none">
-    <span class="di-label">Vertex</span>
-    <span class="di-pair">x<input class="di-field" id="di-vx" type="number" step="any" placeholder="0"></span>
-    <span class="di-pair">y<input class="di-field" id="di-vy" type="number" step="any" placeholder="0"></span>
-    <span class="di-sep">·</span>
-    <span class="di-label">Point</span>
-    <span class="di-pair">x<input class="di-field" id="di-px" type="number" step="any" placeholder="1"></span>
-    <span class="di-pair">y<input class="di-field" id="di-py" type="number" step="any" placeholder="1"></span>
-    <button id="di-para-plot" class="di-btn">Plot</button>
-  </div>
+<div id="point-entry-bar">
+  <label style="color:#9999cc;font-size:18px;font-weight:bold;">&gt;</label>
+  <input id="point-entry-input" type="text" placeholder="point(x1,y1) point(x2,y2)" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <button id="point-entry-btn" type="button">Plot</button>
 </div>
 <div id="preview-bar"></div>
 <div id="input-bar">
@@ -736,6 +699,107 @@
   <button id="draw-toggle" type="button" title="Draw curves by clicking points on the graph">✏</button>
 </div>
 <div id="status-bar">Loading...</div>
+
+<script>
+// Cursor preview for draw mode
+(function() {
+  function clearCursor() {
+    const c = document.getElementById('cursor-canvas');
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+  }
+
+  function syncCanvas(c, container) {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+  }
+
+  function drawCursor(cpx, cpy, xData, yData) {
+    const c = document.getElementById('cursor-canvas');
+    if (!c) return;
+    const container = document.getElementById('graph-container');
+    syncCanvas(c, container);
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, c.width, c.height);
+
+    // Crosshair lines
+    ctx.save();
+    ctx.strokeStyle = 'rgba(230, 126, 34, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(cpx, 0); ctx.lineTo(cpx, c.height);
+    ctx.moveTo(0, cpy); ctx.lineTo(c.width, cpy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Point circle
+    ctx.beginPath();
+    ctx.arc(cpx, cpy, 6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(230, 126, 34, 0.82)';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Coordinate label
+    const fx = Number.isFinite(xData) ? xData.toFixed(2) : '?';
+    const fy = Number.isFinite(yData) ? yData.toFixed(2) : '?';
+    const label = '(' + fx + ', ' + fy + ')';
+    ctx.font = '12px monospace';
+    ctx.fillStyle = '#e67e22';
+    const tx = cpx + 12, ty = cpy - 10;
+    ctx.fillText(label, tx, ty);
+  }
+
+  function handleMove(e) {
+    if (!window._graphDrawMode) { clearCursor(); return; }
+    const img = document.getElementById('graph-img');
+    const container = document.getElementById('graph-container');
+    if (!img || !container) { clearCursor(); return; }
+
+    const containerRect = container.getBoundingClientRect();
+    const imgRect = img.getBoundingClientRect();
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    const px = clientX - imgRect.left;
+    const py = clientY - imgRect.top;
+
+    const ax0 = window._graphAxBox0, ay0 = window._graphAxBox1;
+    const aw  = window._graphAxBox2, ah  = window._graphAxBox3;
+    if (ax0 == null) { clearCursor(); return; }
+
+    const iw = imgRect.width, ih = imgRect.height;
+    const ax_px0 = ax0 * iw, ay_px0 = ay0 * ih;
+    const ax_pxw = aw  * iw, ax_pxh = ah  * ih;
+
+    if (px < ax_px0 || px > ax_px0 + ax_pxw || py < ay_px0 || py > ay_px0 + ax_pxh) {
+      clearCursor(); return;
+    }
+
+    const u = (px - ax_px0) / ax_pxw;
+    const v = (py - ay_px0) / ax_pxh;
+    const xData = window._graphXMin + u * (window._graphXMax - window._graphXMin);
+    const yData = window._graphYMax - v * (window._graphYMax - window._graphYMin);
+
+    const cpx = clientX - containerRect.left;
+    const cpy = clientY - containerRect.top;
+    drawCursor(cpx, cpy, xData, yData);
+  }
+
+  document.addEventListener('mousemove', handleMove);
+  document.addEventListener('touchmove', handleMove, { passive: true });
+  document.addEventListener('mouseleave', clearCursor);
+})();
+</script>
 
 <script type="py" async>
 import copy
@@ -1647,6 +1711,15 @@ class GraphCalcApp:
         bbox = ax.get_position()
         self._axes_box = (bbox.x0, 1.0 - bbox.y1, bbox.width, bbox.height)
         self._render_size = (cw, ch)
+        # Expose to JavaScript for cursor preview
+        window._graphAxBox0 = float(self._axes_box[0])
+        window._graphAxBox1 = float(self._axes_box[1])
+        window._graphAxBox2 = float(self._axes_box[2])
+        window._graphAxBox3 = float(self._axes_box[3])
+        window._graphXMin = float(self.x_min)
+        window._graphXMax = float(self.x_max)
+        window._graphYMin = float(self.y_min)
+        window._graphYMax = float(self.y_max)
 
         # Render to canvas
         buf = io.BytesIO()
@@ -1876,27 +1949,39 @@ class GraphCalcApp:
         self._draw_mode = mode
         self._draw_points = []
         draw_bar = document.getElementById('draw-bar')
-        di = document.getElementById('draw-inputs')
         toggle_btn = document.getElementById('draw-toggle')
         container = document.getElementById('graph-container')
+        input_bar = document.getElementById('input-bar')
+        preview_bar = document.getElementById('preview-bar')
+        point_bar = document.getElementById('point-entry-bar')
+        point_inp = document.getElementById('point-entry-input')
         if mode is None:
             draw_bar.classList.remove('visible')
-            if di: di.classList.remove('visible')
             if toggle_btn: toggle_btn.classList.remove('active')
             if container: container.classList.remove('draw-active')
+            if input_bar: input_bar.style.display = ''
+            if preview_bar: preview_bar.style.display = ''
+            if point_bar: point_bar.classList.remove('visible')
+            window._graphDrawMode = False
         else:
             draw_bar.classList.add('visible')
-            if di: di.classList.add('visible')
             if toggle_btn: toggle_btn.classList.add('active')
             if container: container.classList.add('draw-active')
+            if input_bar: input_bar.style.display = 'none'
+            if preview_bar: preview_bar.style.display = 'none'
+            if point_bar: point_bar.classList.add('visible')
             lb = document.getElementById('draw-line-btn')
             pb = document.getElementById('draw-para-btn')
             if lb: lb.classList.toggle('active', mode == 'line')
             if pb: pb.classList.toggle('active', mode == 'parabola')
-            di_line = document.getElementById('di-line')
-            di_para = document.getElementById('di-para')
-            if di_line: di_line.style.display = 'flex' if mode == 'line' else 'none'
-            if di_para: di_para.style.display = 'flex' if mode == 'parabola' else 'none'
+            if point_inp:
+                if mode == 'line':
+                    point_inp.placeholder = 'point(x1,y1) point(x2,y2)'
+                else:
+                    point_inp.placeholder = 'vertex(x,y) point(x,y)'
+                point_inp.value = ''
+                point_inp.focus()
+            window._graphDrawMode = True
         self._update_draw_hint()
         self.redraw()
 
@@ -1906,10 +1991,10 @@ class GraphCalcApp:
             return
         n = len(self._draw_points)
         if self._draw_mode == 'line':
-            msgs = ['Click first point on graph', 'Click second point on graph']
+            msgs = ['Click P1 on graph', 'Click P2 on graph']
             hint.textContent = msgs[n] if n < 2 else ''
         elif self._draw_mode == 'parabola':
-            msgs = ['Click vertex on graph', 'Click another point on graph']
+            msgs = ['Click vertex on graph', 'Click another point']
             hint.textContent = msgs[n] if n < 2 else ''
         else:
             hint.textContent = ''
@@ -1954,36 +2039,49 @@ class GraphCalcApp:
         self._update_draw_hint()
         self._add_eq(self._next_name(), raw)
 
-    def _plot_line_from_inputs(self):
-        try:
-            x1 = float(document.getElementById('di-x1').value)
-            y1 = float(document.getElementById('di-y1').value)
-            x2 = float(document.getElementById('di-x2').value)
-            y2 = float(document.getElementById('di-y2').value)
-        except Exception:
-            set_status('Enter valid numbers for both points.')
-            return
-        if abs(x2 - x1) < 1e-10:
-            set_status('Cannot draw vertical line (x1 = x2).')
-            return
-        m = (y2 - y1) / (x2 - x1)
-        c = y1 - m * x1
-        self._add_eq(self._next_name(), f'({_sf(m)})*x + ({_sf(c)})')
-
-    def _plot_para_from_inputs(self):
-        try:
-            vx = float(document.getElementById('di-vx').value)
-            vy = float(document.getElementById('di-vy').value)
-            px = float(document.getElementById('di-px').value)
-            py = float(document.getElementById('di-py').value)
-        except Exception:
-            set_status('Enter valid numbers for vertex and point.')
-            return
-        if abs(px - vx) < 1e-10:
-            set_status('Point must differ from vertex horizontally.')
-            return
-        a = (py - vy) / (px - vx) ** 2
-        self._add_eq(self._next_name(), f'({_sf(a)})*(x - ({_sf(vx)}))^2 + ({_sf(vy)})')
+    def _plot_from_point_text(self, text):
+        """Parse point(x,y) / vertex(x,y) syntax and plot the curve."""
+        pattern = r'(point|vertex)\s*\(\s*([^,)]+)\s*,\s*([^,)]+)\s*\)'
+        tokens = re.findall(pattern, text.lower().strip())
+        if self._draw_mode == 'line':
+            points = []
+            for kw, x_s, y_s in tokens:
+                if kw == 'point':
+                    try:
+                        points.append((float(x_s.strip()), float(y_s.strip())))
+                    except Exception:
+                        pass
+            if len(points) < 2:
+                set_status('Need 2 points: point(x1,y1) point(x2,y2)')
+                return
+            (x1, y1), (x2, y2) = points[:2]
+            if abs(x2 - x1) < 1e-10:
+                set_status('Cannot draw vertical line (x1 = x2).')
+                return
+            m = (y2 - y1) / (x2 - x1)
+            c = y1 - m * x1
+            self._add_eq(self._next_name(), f'({_sf(m)})*x + ({_sf(c)})')
+        elif self._draw_mode == 'parabola':
+            verts, pts = [], []
+            for kw, x_s, y_s in tokens:
+                try:
+                    pt = (float(x_s.strip()), float(y_s.strip()))
+                except Exception:
+                    continue
+                if kw == 'vertex':
+                    verts.append(pt)
+                else:
+                    pts.append(pt)
+            if not verts or not pts:
+                set_status('Need: vertex(x,y) point(x,y)')
+                return
+            vx, vy = verts[0]
+            px, py = pts[0]
+            if abs(px - vx) < 1e-10:
+                set_status('Point must differ from vertex horizontally.')
+                return
+            a = (py - vy) / (px - vx) ** 2
+            self._add_eq(self._next_name(), f'({_sf(a)})*(x - ({_sf(vx)}))^2 + ({_sf(vy)})')
 
     # ── Input dispatch ──────────────────────────────────────────────────────
 
@@ -2595,18 +2693,19 @@ def on_global_keydown(event):
     if event.key == 'Escape' and app._draw_mode is not None:
         app._set_draw_mode(None)
 
-def on_di_line_plot(event):
-    app._plot_line_from_inputs()
+def on_point_entry_plot(event):
+    inp = document.getElementById('point-entry-input')
+    text = inp.value.strip() if inp else ''
+    if not text:
+        set_status('Enter points using point(x,y) or vertex(x,y) syntax.')
+        return
+    app._plot_from_point_text(text)
+    if inp:
+        inp.value = ''
 
-def on_di_para_plot(event):
-    app._plot_para_from_inputs()
-
-def on_di_keydown(event):
+def on_point_entry_keydown(event):
     if event.key == 'Enter':
-        if app._draw_mode == 'line':
-            app._plot_line_from_inputs()
-        elif app._draw_mode == 'parabola':
-            app._plot_para_from_inputs()
+        on_point_entry_plot(event)
 
 
 def on_equal_toggle(event):
@@ -2739,13 +2838,10 @@ document.getElementById('draw-para-btn').addEventListener('click', _draw_para_pr
 document.getElementById('draw-cancel-btn').addEventListener('click', _draw_cancel_proxy)
 document.addEventListener('keydown', _global_keydown_proxy)
 
-_di_line_plot_proxy = create_proxy(on_di_line_plot)
-_di_para_plot_proxy = create_proxy(on_di_para_plot)
-_di_keydown_proxy = create_proxy(on_di_keydown)
-document.getElementById('di-line-plot').addEventListener('click', _di_line_plot_proxy)
-document.getElementById('di-para-plot').addEventListener('click', _di_para_plot_proxy)
-for _di_id in ['di-x1', 'di-y1', 'di-x2', 'di-y2', 'di-vx', 'di-vy', 'di-px', 'di-py']:
-    document.getElementById(_di_id).addEventListener('keydown', _di_keydown_proxy)
+_point_entry_plot_proxy = create_proxy(on_point_entry_plot)
+_point_entry_keydown_proxy = create_proxy(on_point_entry_keydown)
+document.getElementById('point-entry-btn').addEventListener('click', _point_entry_plot_proxy)
+document.getElementById('point-entry-input').addEventListener('keydown', _point_entry_keydown_proxy)
 
 # Resize handler
 def on_resize(event=None):
