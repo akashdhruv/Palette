@@ -652,7 +652,7 @@
     <button id="zoom-in-btn" title="Zoom in (+)">+</button>
     <button id="zoom-out-btn" title="Zoom out (−)">−</button>
     <button id="zoom-reset-btn" title="Reset view">⌂</button>
-    <button id="window-btn" title="Set window bounds (xmin / xmax / ymin / ymax)">⊡</button>
+    <button id="window-btn" title="Set window bounds (xmin / xmax / ymin / ymax)">⊞</button>
   </div>
   <div id="info-panel">
     <div class="info-header">
@@ -1686,6 +1686,7 @@ class GraphCalcApp:
                 textcoords='offset points',
                 fontsize=tick_size, color='#111111',
                 bbox=dict(boxstyle='round,pad=0.3', fc='white', alpha=0.9, ec='#aaaaaa', lw=0.7),
+                zorder=9,
             )
 
         # Selected-equation highlights
